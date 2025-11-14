@@ -1,15 +1,10 @@
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { FII, HistoricalDataPoint } from '../types';
 import { fetchFIIMarketData, FIIMarketData, fetchFIIHistoricalData } from '../services/geminiService';
-import { TrendingUp, TrendingDown, DollarSign, LoaderCircle, AlertTriangle, ChevronDown } from 'lucide-react';
-
-const basePortfolio = [
-  { ticker: 'MXRF11', quantity: 150, averagePrice: 10.15 },
-  { ticker: 'HGLG11', quantity: 30, averagePrice: 165.40 },
-  { ticker: 'XPML11', quantity: 50, averagePrice: 110.20 },
-  { ticker: 'KNCR11', quantity: 80, averagePrice: 102.50 },
-];
+import { TrendingUp, TrendingDown, DollarSign, LoaderCircle, AlertTriangle, ChevronDown, Archive } from 'lucide-react';
+import { usePortfolio } from '../hooks/usePortfolio';
 
 const chartPeriods = {
     '1M': { days: 30, label: '1 Mês' },
@@ -186,6 +181,7 @@ const PortfolioCard: React.FC<{
 };
 
 const PortfolioScreen: React.FC = () => {
+  const { holdings, combineHoldingsWithMarketData } = usePortfolio();
   const [portfolio, setPortfolio] = useState<FII[]>([]);
   const [portfolioHistory, setPortfolioHistory] = useState<HistoricalDataPoint[]>([]);
   const [individualHistories, setIndividualHistories] = useState<Record<string, HistoricalDataPoint[]>>({});
@@ -198,42 +194,49 @@ const PortfolioScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async (periodKey: ChartPeriodKey) => {
+    if (holdings.length === 0) {
+      setIsLoading(false);
+      setIsChartLoading(false);
+      setPortfolio([]);
+      setPortfolioHistory([]);
+      setIndividualHistories({});
+      return;
+    }
+
     setIsLoading(true);
     setIsChartLoading(true);
     setError(null);
     try {
       // 1. Fetch current market data
-      const tickers = basePortfolio.map(fii => fii.ticker);
+      const tickers = holdings.map(h => h.ticker);
       const marketData: FIIMarketData[] = await fetchFIIMarketData(tickers);
-      const marketDataMap = new Map(marketData.map(data => [data.ticker, data]));
-
-      const fullPortfolioData: FII[] = basePortfolio.map(baseFii => {
-        const data = marketDataMap.get(baseFii.ticker);
-        return { ...baseFii, name: data?.name || 'Nome não encontrado', currentPrice: data?.currentPrice || 0 };
-      }).filter(fii => fii.currentPrice > 0);
+      
+      const fullPortfolioData = combineHoldingsWithMarketData(marketData);
       setPortfolio(fullPortfolioData);
       setIsLoading(false);
 
       // 2. Fetch historical data in parallel
       const periodInDays = chartPeriods[periodKey].days;
-      const historyPromises = basePortfolio.map(fii => fetchFIIHistoricalData(fii.ticker, periodInDays));
+      const historyPromises = holdings.map(h => fetchFIIHistoricalData(h.ticker, periodInDays));
       const histories = await Promise.all(historyPromises);
 
       const individualHistoryMap: Record<string, HistoricalDataPoint[]> = {};
-      basePortfolio.forEach((fii, index) => {
-        individualHistoryMap[fii.ticker] = histories[index];
+      holdings.forEach((h, index) => {
+        individualHistoryMap[h.ticker] = histories[index];
       });
       setIndividualHistories(individualHistoryMap);
       
       // 3. Aggregate portfolio history
       const portfolioHistoryMap = new Map<string, number>();
-      basePortfolio.forEach((fii, index) => {
-          const quantity = fii.quantity;
+      holdings.forEach((h, index) => {
+          const quantity = h.quantity;
           const history = histories[index];
-          history.forEach(dataPoint => {
-              const currentValue = portfolioHistoryMap.get(dataPoint.date) || 0;
-              portfolioHistoryMap.set(dataPoint.date, currentValue + dataPoint.value * quantity);
-          });
+          if (history) {
+            history.forEach(dataPoint => {
+                const currentValue = portfolioHistoryMap.get(dataPoint.date) || 0;
+                portfolioHistoryMap.set(dataPoint.date, currentValue + dataPoint.value * quantity);
+            });
+          }
       });
       
       const aggregatedHistory = Array.from(portfolioHistoryMap.entries())
@@ -249,7 +252,7 @@ const PortfolioScreen: React.FC = () => {
       setIsLoading(false);
       setIsChartLoading(false);
     }
-  }, []);
+  }, [holdings, combineHoldingsWithMarketData]);
 
   useEffect(() => {
     loadData(chartPeriod);
@@ -262,11 +265,22 @@ const PortfolioScreen: React.FC = () => {
   const totalValue = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.currentPrice), 0);
 
   const renderContent = () => {
-    if (isLoading && portfolio.length === 0) {
+    if (isLoading && holdings.length > 0) {
       return <LoadingSpinner text="Sincronizando com o mercado..." subtext="Buscando cotações atuais para seus ativos."/>;
     }
     if (error) {
       return <ErrorDisplay message={error} onRetry={() => loadData(chartPeriod)} />;
+    }
+    if (holdings.length === 0) {
+      return (
+          <div className="flex flex-col items-center justify-center text-center p-8 mt-10 text-content-200 bg-base-200 rounded-lg shadow-md">
+              <Archive size={48} className="mb-4 text-brand-primary" />
+              <h3 className="text-xl font-semibold text-content-100">Sua carteira está vazia</h3>
+              <p className="text-sm mt-2 max-w-sm">
+                  Acesse a aba <span className="font-bold text-brand-primary">Transações</span> para adicionar seus ativos e começar a acompanhar seus investimentos.
+              </p>
+          </div>
+      );
     }
     return (
       <div className="flex flex-col gap-8">

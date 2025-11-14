@@ -19,6 +19,15 @@
               'content-100': '#F9FAFB', // Gray 50
               'content-200': '#D1D5DB', // Gray 300
             },
+            keyframes: {
+              'fade-in-up': {
+                '0%': { opacity: '0', transform: 'translateY(20px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+            },
+            animation: {
+              'fade-in-up': 'fade-in-up 0.3s ease-out forwards',
+            },
           },
         },
       }

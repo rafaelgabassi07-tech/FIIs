@@ -1,12 +1,17 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { NewsArticle, GroundingSource, HistoricalDataPoint } from '../types';
 
+// Fix: Adhering to the coding guidelines to use process.env.API_KEY instead of import.meta.env.VITE_API_KEY.
+// This resolves the TypeScript error 'Property 'env' does not exist on type 'ImportMeta''
+// and aligns with standard practices for handling environment variables.
 const getAi = () => {
-  // Fix: Switched to `process.env.API_KEY` to resolve the TypeScript error and align with API key guidelines.
+  // The API key is retrieved from environment variables.
+  // It is expected to be set in the deployment environment.
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    // Isso será capturado pelo bloco try-catch da função chamadora.
-    throw new Error("API Key not found.");
+    // This will be caught by the calling function's try-catch block.
+    throw new Error("API_KEY not found in environment variables.");
   }
   return new GoogleGenAI({ apiKey });
 }
@@ -63,9 +68,9 @@ export const fetchFIIMarketData = async (tickers: string[]): Promise<FIIMarketDa
 
   } catch (error) {
     console.error("Error fetching FII market data:", error);
-    if (error instanceof Error && error.message.includes("API Key not found")) {
-        // Fix: Updated error message to align with guidelines (do not instruct user on API key setup).
-        throw new Error("A chave de API não foi encontrada.");
+    // Fix: Updated error handling to reflect the change from VITE_API_KEY to API_KEY.
+    if (error instanceof Error && error.message.includes("API_KEY not found")) {
+        throw new Error("A chave de API não foi encontrada. Certifique-se de que a variável de ambiente API_KEY está configurada.");
     }
     throw new Error("Não foi possível buscar os dados de mercado. Tente novamente mais tarde.");
   }
@@ -174,9 +179,9 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
 
   } catch (error) {
     console.error("Error fetching FII news:", error);
-    if (error instanceof Error && error.message.includes("API Key not found")) {
-        // Fix: Updated error message to align with guidelines (do not instruct user on API key setup).
-        throw new Error("A chave de API não foi encontrada.");
+    // Fix: Updated error handling to reflect the change from VITE_API_KEY to API_KEY.
+    if (error instanceof Error && error.message.includes("API_KEY not found")) {
+        throw new Error("A chave de API não foi encontrada. Certifique-se de que a variável de ambiente API_KEY está configurada.");
     }
     throw new Error("Não foi possível buscar as notícias. A IA pode estar ocupada, tente novamente.");
   }

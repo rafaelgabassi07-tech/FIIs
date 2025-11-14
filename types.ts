@@ -32,3 +32,8 @@ export interface GroundingSource {
   uri: string;
   title: string;
 }
+
+export interface HistoricalDataPoint {
+  date: string;
+  value: number;
+}

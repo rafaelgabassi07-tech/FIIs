@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { NewsArticle, GroundingSource } from '../types';
+import { NewsArticle, GroundingSource, HistoricalDataPoint } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
@@ -57,6 +57,53 @@ export const fetchFIIMarketData = async (tickers: string[]): Promise<FIIMarketDa
     throw new Error("Não foi possível buscar os dados de mercado. Tente novamente mais tarde.");
   }
 };
+
+export const fetchFIIHistoricalData = async (
+  ticker: string,
+  periodInDays: number
+): Promise<HistoricalDataPoint[]> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `Gere dados históricos de preço diário para o FII brasileiro com o ticker '${ticker}' nos últimos ${periodInDays} dias. A resposta deve ser um array JSON dentro de um objeto com a chave "history". Cada objeto no array deve ter uma 'date' (no formato 'YYYY-MM-DD') e um 'value' (representando o preço de fechamento como um número). Ordene os resultados do mais antigo para o mais recente.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            history: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  date: {
+                    type: Type.STRING,
+                    description: "A data no formato YYYY-MM-DD.",
+                  },
+                  value: {
+                    type: Type.NUMBER,
+                    description: "O preço de fechamento do FII na data especificada.",
+                  },
+                },
+                required: ["date", "value"],
+              },
+            },
+          },
+          required: ["history"],
+        },
+      },
+    });
+
+    const jsonString = response.text;
+    const parsed = JSON.parse(jsonString);
+    return (parsed.history || []) as HistoricalDataPoint[];
+  } catch (error) {
+    console.error(`Error fetching historical data for ${ticker}:`, error);
+    // Retorna um array vazio em caso de erro para não quebrar a agregação da carteira.
+    return [];
+  }
+};
+
 
 export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources: GroundingSource[] }> => {
   try {

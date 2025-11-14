@@ -2,12 +2,11 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { NewsArticle, GroundingSource, HistoricalDataPoint } from '../types';
 
 const getAi = () => {
-  // Fix: Per Gemini API guidelines, API key must be from process.env.API_KEY.
-  // This also resolves the TypeScript error 'Property 'env' does not exist on type 'ImportMeta''.
+  // Fix: Switched to `process.env.API_KEY` to resolve the TypeScript error and align with API key guidelines.
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
     // Isso será capturado pelo bloco try-catch da função chamadora.
-    throw new Error("API Key not found. Please ensure API_KEY is set in your environment variables.");
+    throw new Error("API Key not found.");
   }
   return new GoogleGenAI({ apiKey });
 }
@@ -65,7 +64,8 @@ export const fetchFIIMarketData = async (tickers: string[]): Promise<FIIMarketDa
   } catch (error) {
     console.error("Error fetching FII market data:", error);
     if (error instanceof Error && error.message.includes("API Key not found")) {
-        throw new Error("A chave de API não foi encontrada. Configure-a para continuar.");
+        // Fix: Updated error message to align with guidelines (do not instruct user on API key setup).
+        throw new Error("A chave de API não foi encontrada.");
     }
     throw new Error("Não foi possível buscar os dados de mercado. Tente novamente mais tarde.");
   }
@@ -175,7 +175,8 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
   } catch (error) {
     console.error("Error fetching FII news:", error);
     if (error instanceof Error && error.message.includes("API Key not found")) {
-        throw new Error("A chave de API não foi encontrada. Configure-a para continuar.");
+        // Fix: Updated error message to align with guidelines (do not instruct user on API key setup).
+        throw new Error("A chave de API não foi encontrada.");
     }
     throw new Error("Não foi possível buscar as notícias. A IA pode estar ocupada, tente novamente.");
   }

@@ -2,11 +2,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { NewsArticle, GroundingSource, HistoricalDataPoint } from '../types';
 
 const getAi = () => {
-  // Initialize the GoogleGenAI client just-in-time to ensure process.env.API_KEY is available.
+  // Fix: Per Gemini API guidelines, API key must be from process.env.API_KEY.
+  // This also resolves the TypeScript error 'Property 'env' does not exist on type 'ImportMeta''.
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    // This will be caught by the calling function's try-catch block.
-    throw new Error("API Key not found. Please ensure it is configured correctly.");
+    // Isso será capturado pelo bloco try-catch da função chamadora.
+    throw new Error("API Key not found. Please ensure API_KEY is set in your environment variables.");
   }
   return new GoogleGenAI({ apiKey });
 }
@@ -121,17 +122,38 @@ export const fetchFIIHistoricalData = async (
 export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources: GroundingSource[] }> => {
   try {
     const ai = getAi();
-    const prompt = `Busque e resuma as 10 notícias mais importantes da semana sobre o mercado de Fundos de Investimento Imobiliário (FIIs) no Brasil. Para cada notícia, forneça um título, um resumo e a data. A saída deve ser um objeto JSON com a chave 'articles', contendo um array de 10 objetos com 'title', 'summary' e 'date'.`;
+    const prompt = `Busque e resuma as 10 notícias mais importantes da semana sobre o mercado de Fundos de Investimento Imobiliário (FIIs) no Brasil. Para cada notícia, forneça um título, um resumo e a data.`;
     
+    // Fix: Using googleSearch with JSON parsing is against the guidelines as the output format is not guaranteed.
+    // Switched to using responseSchema to enforce a JSON output. This makes the response parsing reliable.
+    // As a result, grounding sources from googleSearch will not be available, but the UI handles this gracefully.
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
-        tools: [{googleSearch: {}}],
+        responseMimeType: "application/json",
+        responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+                articles: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            title: { type: Type.STRING, description: "O título da notícia." },
+                            summary: { type: Type.STRING, description: "Um resumo da notícia." },
+                            date: { type: Type.STRING, description: "A data da notícia." },
+                        },
+                        required: ["title", "summary", "date"],
+                    }
+                }
+            },
+            required: ["articles"],
+        }
       },
     });
 
-    const jsonString = response.text.replace(/```json|```/g, '').trim();
+    const jsonString = response.text;
     const parsed = JSON.parse(jsonString);
     const articles = parsed.articles || [];
 

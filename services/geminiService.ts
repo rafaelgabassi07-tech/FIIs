@@ -1,7 +1,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NewsArticle, GroundingSource, HistoricalDataPoint } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+const getAi = () => {
+  // Initialize the GoogleGenAI client just-in-time to ensure process.env.API_KEY is available.
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    // This will be caught by the calling function's try-catch block.
+    throw new Error("API Key not found. Please ensure it is configured correctly.");
+  }
+  return new GoogleGenAI({ apiKey });
+}
 
 export interface FIIMarketData {
     ticker: string;
@@ -11,6 +19,7 @@ export interface FIIMarketData {
 
 export const fetchFIIMarketData = async (tickers: string[]): Promise<FIIMarketData[]> => {
   try {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `Para os seguintes tickers de Fundos de Investimento Imobiliário (FIIs) brasileiros: ${tickers.join(', ')}, forneça o nome completo do fundo e um preço atual de mercado realista para cada um.`,
@@ -54,6 +63,9 @@ export const fetchFIIMarketData = async (tickers: string[]): Promise<FIIMarketDa
 
   } catch (error) {
     console.error("Error fetching FII market data:", error);
+    if (error instanceof Error && error.message.includes("API Key not found")) {
+        throw new Error("A chave de API não foi encontrada. Configure-a para continuar.");
+    }
     throw new Error("Não foi possível buscar os dados de mercado. Tente novamente mais tarde.");
   }
 };
@@ -63,6 +75,7 @@ export const fetchFIIHistoricalData = async (
   periodInDays: number
 ): Promise<HistoricalDataPoint[]> => {
   try {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `Gere dados históricos de preço diário para o FII brasileiro com o ticker '${ticker}' nos últimos ${periodInDays} dias. A resposta deve ser um array JSON dentro de um objeto com a chave "history". Cada objeto no array deve ter uma 'date' (no formato 'YYYY-MM-DD') e um 'value' (representando o preço de fechamento como um número). Ordene os resultados do mais antigo para o mais recente.`,
@@ -107,6 +120,7 @@ export const fetchFIIHistoricalData = async (
 
 export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources: GroundingSource[] }> => {
   try {
+    const ai = getAi();
     const prompt = `Busque e resuma as 10 notícias mais importantes da semana sobre o mercado de Fundos de Investimento Imobiliário (FIIs) no Brasil. Para cada notícia, forneça um título, um resumo e a data. A saída deve ser um objeto JSON com a chave 'articles', contendo um array de 10 objetos com 'title', 'summary' e 'date'.`;
     
     const response = await ai.models.generateContent({
@@ -138,6 +152,9 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
 
   } catch (error) {
     console.error("Error fetching FII news:", error);
+    if (error instanceof Error && error.message.includes("API Key not found")) {
+        throw new Error("A chave de API não foi encontrada. Configure-a para continuar.");
+    }
     throw new Error("Não foi possível buscar as notícias. A IA pode estar ocupada, tente novamente.");
   }
 };

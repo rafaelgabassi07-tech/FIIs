@@ -22,104 +22,100 @@ export interface FIIMarketData {
     currentPrice: number;
 }
 
-export const fetchFIIMarketData = async (tickers: string[]): Promise<FIIMarketData[]> => {
-  try {
-    const ai = getAi();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Para os seguintes tickers de Fundos de Investimento Imobiliário (FIIs) brasileiros: ${tickers.join(', ')}, forneça o nome completo do fundo e um preço atual de mercado realista para cada um.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            fiis: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  ticker: {
-                    type: Type.STRING,
-                    description: "O ticker do FII, por exemplo, 'MXRF11'.",
-                  },
-                  name: {
-                    type: Type.STRING,
-                    description: "O nome completo do fundo.",
-                  },
-                  currentPrice: {
-                    type: Type.NUMBER,
-                    description: "O preço atual de mercado da cota do fundo.",
-                  },
-                },
-                required: ["ticker", "name", "currentPrice"],
-              },
-            },
-          },
-          required: ["fiis"],
-        },
-      },
-    });
+export interface FIIFullData {
+    ticker: string;
+    name: string;
+    currentPrice: number;
+    history: HistoricalDataPoint[];
+}
 
-    const jsonString = response.text;
-    const parsed = JSON.parse(jsonString);
-    const tickerSet = new Set(tickers);
-    const filteredFIIs = parsed.fiis.filter((fii: FIIMarketData) => tickerSet.has(fii.ticker));
-    return filteredFIIs as FIIMarketData[];
 
-  } catch (error) {
-    console.error("Error fetching FII market data:", error);
-    // Fix: Updated error handling to reflect the change from VITE_API_KEY to API_KEY.
-    if (error instanceof Error && error.message.includes("API_KEY not found")) {
-        throw new Error("A chave de API não foi encontrada. Certifique-se de que a variável de ambiente API_KEY está configurada.");
-    }
-    throw new Error("Não foi possível buscar os dados de mercado. Tente novamente mais tarde.");
-  }
-};
+const CHUNK_SIZE = 5;
+const REQUEST_DELAY = 1000; // 1 second delay between chunks
 
-export const fetchFIIHistoricalData = async (
-  ticker: string,
+export const fetchFIIsFullData = async (
+  tickers: string[],
   periodInDays: number
-): Promise<HistoricalDataPoint[]> => {
+): Promise<Record<string, FIIFullData>> => {
+  if (tickers.length === 0) {
+    return {};
+  }
+  
   try {
     const ai = getAi();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Gere dados históricos de preço diário para o FII brasileiro com o ticker '${ticker}' nos últimos ${periodInDays} dias. A resposta deve ser um array JSON dentro de um objeto com a chave "history". Cada objeto no array deve ter uma 'date' (no formato 'YYYY-MM-DD') e um 'value' (representando o preço de fechamento como um número). Ordene os resultados do mais antigo para o mais recente.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            history: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  date: {
-                    type: Type.STRING,
-                    description: "A data no formato YYYY-MM-DD.",
-                  },
-                  value: {
-                    type: Type.NUMBER,
-                    description: "O preço de fechamento do FII na data especificada.",
-                  },
-                },
-                required: ["date", "value"],
-              },
-            },
-          },
-          required: ["history"],
-        },
-      },
-    });
+    const tickerChunks = [];
+    for (let i = 0; i < tickers.length; i += CHUNK_SIZE) {
+        tickerChunks.push(tickers.slice(i, i + CHUNK_SIZE));
+    }
 
-    const jsonString = response.text;
-    const parsed = JSON.parse(jsonString);
-    return (parsed.history || []) as HistoricalDataPoint[];
+    const allData: Record<string, FIIFullData> = {};
+
+    for (const chunk of tickerChunks) {
+        // Fix: The model needs grounding to access real-time financial data.
+        // Switched to using googleSearch and a more directive prompt to ensure data freshness and reliable JSON output.
+        // This replaces the previous implementation that used responseSchema without grounding, which was likely failing.
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: `Usando a busca, para os FIIs brasileiros com os tickers '${chunk.join(', ')}', forneça o nome completo e os dados históricos de preço de fechamento diário dos últimos ${periodInDays} dias. O preço mais recente deve ser o preço de fechamento do último dia de negociação. A resposta DEVE ser um único bloco de código JSON, sem nenhum texto ou explicação adicional, apenas o JSON. O formato do JSON deve ser: { "fiis": [ { "ticker": "...", "name": "...", "history": [ { "date": "YYYY-MM-DD", "value": 123.45 } ] } ] }`,
+          config: {
+            tools: [{googleSearch: {}}],
+          },
+        });
+        
+        let jsonString = response.text;
+        
+        // Robustly extract JSON from the response text.
+        const jsonMatch = jsonString.match(/```json\n([\s\S]*?)\n```/);
+        if (jsonMatch && jsonMatch[1]) {
+            jsonString = jsonMatch[1];
+        } else {
+            const startIndex = jsonString.indexOf('{');
+            const endIndex = jsonString.lastIndexOf('}');
+            if (startIndex !== -1 && endIndex !== -1) {
+                jsonString = jsonString.substring(startIndex, endIndex + 1);
+            }
+        }
+        
+        try {
+            const parsed = JSON.parse(jsonString);
+
+            if (parsed.fiis) {
+              for (const item of parsed.fiis) {
+                const history = (item.history || []).sort(
+                    (a: HistoricalDataPoint, b: HistoricalDataPoint) => 
+                        new Date(a.date).getTime() - new Date(b.date).getTime()
+                );
+                const currentPrice = history.length > 0 ? history[history.length - 1].value : 0;
+                if (item.ticker) {
+                    allData[item.ticker] = {
+                        ticker: item.ticker,
+                        name: item.name || 'Nome não encontrado',
+                        history: history,
+                        currentPrice: currentPrice,
+                    };
+                }
+              }
+            }
+        } catch (parseError) {
+            console.error("Error parsing JSON from Gemini response:", parseError);
+            console.error("Original response text for debugging:", response.text);
+            throw new Error("A IA retornou dados em um formato inesperado. Tente novamente.");
+        }
+        
+        if (tickerChunks.indexOf(chunk) < tickerChunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY));
+        }
+    }
+    
+    return allData;
+
   } catch (error) {
-    console.error(`Error fetching historical data for ${ticker}:`, error);
-    // Retorna um array vazio em caso de erro para não quebrar a agregação da carteira.
-    return [];
+    console.error("Error fetching FII data:", error);
+    // Fix: Improved error message to be more helpful, covering both missing and invalid API keys.
+    if (error instanceof Error && (error.message.includes("API_KEY") || error.message.includes("API key"))) {
+        throw new Error("Falha na autenticação com a API. Verifique se sua chave de API (API_KEY) está configurada corretamente, é válida e possui as permissões necessárias.");
+    }
+    throw new Error("Não foi possível buscar os dados dos FIIs. A IA pode estar sobrecarregada ou ocorreu um erro de rede. Tente novamente mais tarde.");
   }
 };
 
@@ -179,9 +175,9 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
 
   } catch (error) {
     console.error("Error fetching FII news:", error);
-    // Fix: Updated error handling to reflect the change from VITE_API_KEY to API_KEY.
-    if (error instanceof Error && error.message.includes("API_KEY not found")) {
-        throw new Error("A chave de API não foi encontrada. Certifique-se de que a variável de ambiente API_KEY está configurada.");
+    // Fix: Improved error message to be more helpful, covering both missing and invalid API keys.
+    if (error instanceof Error && (error.message.includes("API_KEY") || error.message.includes("API key"))) {
+        throw new Error("Falha na autenticação com a API. Verifique se sua chave de API (API_KEY) está configurada corretamente, é válida e possui as permissões necessárias.");
     }
     throw new Error("Não foi possível buscar as notícias. A IA pode estar ocupada, tente novamente.");
   }

@@ -16,7 +16,7 @@ export interface FII {
 export interface Transaction {
   id: string;
   ticker: string;
-  type: 'Compra' | 'Venda';
+  type: 'Compra' | 'Venda' | 'Dividendo';
   quantity: number;
   price: number;
   date: string;

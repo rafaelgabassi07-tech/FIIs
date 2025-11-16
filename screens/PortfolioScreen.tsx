@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { FII, HistoricalDataPoint } from '../types';
-import { fetchFIIMarketData, FIIMarketData, fetchFIIHistoricalData } from '../services/geminiService';
-import { TrendingUp, TrendingDown, DollarSign, LoaderCircle, AlertTriangle, ChevronDown, Archive } from 'lucide-react';
+import { fetchFIIsFullData, FIIMarketData } from '../services/geminiService';
+import { TrendingUp, TrendingDown, DollarSign, LoaderCircle, AlertTriangle, ChevronDown, Archive, Gift } from 'lucide-react';
 import { usePortfolio } from '../hooks/usePortfolio';
 
 const chartPeriods = {
@@ -181,7 +180,7 @@ const PortfolioCard: React.FC<{
 };
 
 const PortfolioScreen: React.FC = () => {
-  const { holdings, combineHoldingsWithMarketData } = usePortfolio();
+  const { holdings, dividends, combineHoldingsWithMarketData } = usePortfolio();
   const [portfolio, setPortfolio] = useState<FII[]>([]);
   const [portfolioHistory, setPortfolioHistory] = useState<HistoricalDataPoint[]>([]);
   const [individualHistories, setIndividualHistories] = useState<Record<string, HistoricalDataPoint[]>>({});
@@ -207,30 +206,31 @@ const PortfolioScreen: React.FC = () => {
     setIsChartLoading(true);
     setError(null);
     try {
-      // 1. Fetch current market data
       const tickers = holdings.map(h => h.ticker);
-      const marketData: FIIMarketData[] = await fetchFIIMarketData(tickers);
+      const periodInDays = chartPeriods[periodKey].days;
+      
+      const fullDataMap = await fetchFIIsFullData(tickers, periodInDays);
+      
+      const marketData: FIIMarketData[] = Object.values(fullDataMap).map(data => ({
+          ticker: data.ticker,
+          name: data.name,
+          currentPrice: data.currentPrice,
+      }));
       
       const fullPortfolioData = combineHoldingsWithMarketData(marketData);
       setPortfolio(fullPortfolioData);
-      setIsLoading(false);
-
-      // 2. Fetch historical data in parallel
-      const periodInDays = chartPeriods[periodKey].days;
-      const historyPromises = holdings.map(h => fetchFIIHistoricalData(h.ticker, periodInDays));
-      const histories = await Promise.all(historyPromises);
+      setIsLoading(false); 
 
       const individualHistoryMap: Record<string, HistoricalDataPoint[]> = {};
-      holdings.forEach((h, index) => {
-        individualHistoryMap[h.ticker] = histories[index];
+      Object.keys(fullDataMap).forEach(ticker => {
+          individualHistoryMap[ticker] = fullDataMap[ticker].history;
       });
       setIndividualHistories(individualHistoryMap);
       
-      // 3. Aggregate portfolio history
       const portfolioHistoryMap = new Map<string, number>();
-      holdings.forEach((h, index) => {
+      holdings.forEach(h => {
           const quantity = h.quantity;
-          const history = histories[index];
+          const history = individualHistoryMap[h.ticker];
           if (history) {
             history.forEach(dataPoint => {
                 const currentValue = portfolioHistoryMap.get(dataPoint.date) || 0;
@@ -263,6 +263,32 @@ const PortfolioScreen: React.FC = () => {
   };
 
   const totalValue = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.currentPrice), 0);
+  const totalInvested = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.averagePrice), 0);
+  const totalProfitLoss = totalValue - totalInvested;
+  const totalProfitLossPercent = totalInvested > 0 ? (totalProfitLoss / totalInvested) * 100 : 0;
+  const isTotalPositive = totalProfitLoss >= 0;
+
+  const dividendsByPeriod = useMemo(() => {
+    if (!dividends) return [];
+    
+    const periodInDays = chartPeriods[chartPeriod].days;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - periodInDays);
+    
+    return dividends.filter(tx => new Date(tx.date) >= cutoffDate);
+  }, [dividends, chartPeriod]);
+
+  const totalDividends = useMemo(() => {
+      return dividendsByPeriod.reduce((acc, tx) => acc + tx.price, 0);
+  }, [dividendsByPeriod]);
+
+  const dividendsByFii = useMemo(() => {
+      const byFii: Record<string, number> = {};
+      for (const tx of dividendsByPeriod) {
+          byFii[tx.ticker] = (byFii[tx.ticker] || 0) + tx.price;
+      }
+      return Object.entries(byFii).sort((a, b) => b[1] - a[1]);
+  }, [dividendsByPeriod]);
 
   const renderContent = () => {
     if (isLoading && holdings.length > 0) {
@@ -284,9 +310,27 @@ const PortfolioScreen: React.FC = () => {
     }
     return (
       <div className="flex flex-col gap-8">
-        <div className="bg-brand-primary text-white p-6 rounded-xl shadow-lg flex flex-col items-start w-full">
-            <div className="flex items-center"><DollarSign size={28}/><h2 className="text-xl font-semibold ml-2">Patrimônio Total</h2></div>
+        <div className="bg-brand-primary text-white p-6 rounded-xl shadow-lg w-full">
+            <div className="flex items-center">
+              <DollarSign size={28}/>
+              <h2 className="text-xl font-semibold ml-2">Patrimônio Total</h2>
+            </div>
           <p className="text-4xl font-bold mt-2">{totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+          
+          {totalInvested > 0 && (
+            <div className="mt-4 pt-4 border-t border-white/20">
+                <h3 className="text-sm font-semibold text-emerald-100">Lucro/Prejuízo não Realizado</h3>
+                <div className="flex items-center mt-1">
+                    {isTotalPositive ? <TrendingUp size={22} className="mr-2" /> : <TrendingDown size={22} className="mr-2" />}
+                    <span className="text-2xl font-bold">
+                        {totalProfitLoss.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </span>
+                    <span className="ml-3 text-lg font-semibold">
+                        ({isTotalPositive ? '+' : ''}{totalProfitLossPercent.toFixed(2)}%)
+                    </span>
+                </div>
+            </div>
+          )}
         </div>
         
         <div className="bg-base-200 p-4 rounded-xl shadow-lg">
@@ -300,9 +344,39 @@ const PortfolioScreen: React.FC = () => {
             </div>
             {isChartLoading ? <LoadingSpinner text="Calculando desempenho..."/> : <InteractiveChart data={portfolioHistory} color="#10B981" />}
         </div>
+        
+        <div>
+          <h3 className="text-xl font-semibold text-content-100 mb-4">Meus Dividendos</h3>
+          <div className="bg-base-200 p-4 rounded-xl shadow-lg mb-4">
+              <div className="flex items-center text-content-200">
+                <Gift size={20} className="mr-2 text-yellow-400"/>
+                <p className="text-md">Total Recebido ({chartPeriods[chartPeriod].label})</p>
+              </div>
+              <p className="text-3xl font-bold text-yellow-400 mt-1">
+                  {totalDividends.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+          </div>
+
+          <div className="space-y-2">
+              {dividendsByFii.length > 0 ? (
+                  dividendsByFii.map(([ticker, amount]) => (
+                      <div key={ticker} className="bg-base-200 p-3 rounded-lg flex justify-between items-center shadow-sm">
+                          <span className="font-bold text-content-100">{ticker}</span>
+                          <span className="font-semibold text-green-400">
+                              + {amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </span>
+                      </div>
+                  ))
+              ) : (
+                  <div className="text-center p-4 bg-base-200 rounded-lg shadow-sm">
+                      <p className="text-content-200">Nenhum dividendo registrado neste período.</p>
+                  </div>
+              )}
+          </div>
+        </div>
 
         <div>
-            <h3 className="text-xl font-semibold text-content-100 mb-4">Meus Ativos</h3>
+            <h3 className="text-xl font-semibold text-content-100 mb-4 mt-8">Meus Ativos</h3>
             <div className="space-y-4">
                 {portfolio.map(fii => 
                     <PortfolioCard 

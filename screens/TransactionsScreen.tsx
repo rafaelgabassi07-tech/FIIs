@@ -1,15 +1,14 @@
-
 import React, { useState, useEffect } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { Transaction } from '../types';
-import { Plus, Trash2, X, Inbox, ArrowDown, ArrowUp } from 'lucide-react';
+import { Plus, Trash2, X, Inbox, ArrowDown, ArrowUp, Gift } from 'lucide-react';
 
 const TransactionModal: React.FC<{
   onClose: () => void;
   onAdd: (transaction: Omit<Transaction, 'id'>) => void;
 }> = ({ onClose, onAdd }) => {
   const [ticker, setTicker] = useState('');
-  const [type, setType] = useState<'Compra' | 'Venda'>('Compra');
+  const [type, setType] = useState<'Compra' | 'Venda' | 'Dividendo'>('Compra');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -17,16 +16,22 @@ const TransactionModal: React.FC<{
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticker || !quantity || !price || !date) {
+    const numPrice = parseFloat(price);
+    const numQuantity = type === 'Dividendo' ? 1 : parseFloat(quantity);
+    
+    if (!ticker || !price || !date || (type !== 'Dividendo' && !quantity)) {
       setError('Todos os campos são obrigatórios.');
       return;
     }
-    const numQuantity = parseFloat(quantity);
-    const numPrice = parseFloat(price);
-    if (isNaN(numQuantity) || numQuantity <= 0 || isNaN(numPrice) || numPrice <= 0) {
-      setError('Quantidade e preço devem ser números positivos.');
+    if (isNaN(numPrice) || numPrice <= 0) {
+        setError('O valor deve ser um número positivo.');
+        return;
+    }
+    if (type !== 'Dividendo' && (isNaN(numQuantity) || numQuantity <= 0)) {
+      setError('A quantidade deve ser um número positivo.');
       return;
     }
+
     setError('');
     onAdd({
       ticker: ticker.toUpperCase().trim(),
@@ -61,41 +66,59 @@ const TransactionModal: React.FC<{
 
             <div>
                 <label className="block text-sm font-medium text-content-200 mb-2">Tipo de Operação</label>
-                <div className="flex gap-4">
+                <div className="flex gap-2">
                     <button type="button" onClick={() => setType('Compra')} className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md border-2 transition-colors ${type === 'Compra' ? 'bg-green-500/20 border-green-500 text-green-400' : 'bg-base-300 border-transparent text-content-200'}`}>
                         <ArrowDown size={16} /> Compra
                     </button>
                     <button type="button" onClick={() => setType('Venda')} className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md border-2 transition-colors ${type === 'Venda' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-base-300 border-transparent text-content-200'}`}>
                         <ArrowUp size={16} /> Venda
                     </button>
+                    <button type="button" onClick={() => setType('Dividendo')} className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md border-2 transition-colors ${type === 'Dividendo' ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400' : 'bg-base-300 border-transparent text-content-200'}`}>
+                        <Gift size={16} /> Dividendo
+                    </button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="quantity" className="block text-sm font-medium text-content-200 mb-1">Quantidade</label>
-                <input
-                  id="quantity"
-                  type="number"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  placeholder="10"
-                  className="w-full bg-base-300 border border-base-100 rounded-md px-3 py-2 text-content-100 focus:ring-2 focus:ring-brand-primary focus:outline-none"
-                />
+            {type !== 'Dividendo' ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="quantity" className="block text-sm font-medium text-content-200 mb-1">Quantidade</label>
+                  <input
+                    id="quantity"
+                    type="number"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    placeholder="10"
+                    className="w-full bg-base-300 border border-base-100 rounded-md px-3 py-2 text-content-100 focus:ring-2 focus:ring-brand-primary focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="price" className="block text-sm font-medium text-content-200 mb-1">Preço (R$)</label>
+                  <input
+                    id="price"
+                    type="number"
+                    step="0.01"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="10.50"
+                    className="w-full bg-base-300 border border-base-100 rounded-md px-3 py-2 text-content-100 focus:ring-2 focus:ring-brand-primary focus:outline-none"
+                  />
+                </div>
               </div>
+            ) : (
               <div>
-                <label htmlFor="price" className="block text-sm font-medium text-content-200 mb-1">Preço (R$)</label>
+                <label htmlFor="price" className="block text-sm font-medium text-content-200 mb-1">Valor Total Recebido (R$)</label>
                 <input
                   id="price"
                   type="number"
                   step="0.01"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  placeholder="10.50"
+                  placeholder="100.00"
                   className="w-full bg-base-300 border border-base-100 rounded-md px-3 py-2 text-content-100 focus:ring-2 focus:ring-brand-primary focus:outline-none"
                 />
               </div>
-            </div>
+            )}
             <div>
               <label htmlFor="date" className="block text-sm font-medium text-content-200 mb-1">Data</label>
               <input
@@ -177,11 +200,12 @@ const TransactionsScreen: React.FC = () => {
             <div className="space-y-3">
               {sortedTransactions.map((tx) => {
                 const isBuy = tx.type === 'Compra';
+                const isDividend = tx.type === 'Dividendo';
                 return (
                   <div key={tx.id} className="bg-base-200 p-4 rounded-lg flex items-center justify-between shadow">
                     <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isBuy ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
-                            {isBuy ? <ArrowDown className="text-green-400" size={20} /> : <ArrowUp className="text-red-400" size={20} />}
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isBuy ? 'bg-green-500/20' : isDividend ? 'bg-yellow-500/20' : 'bg-red-500/20'}`}>
+                            {isBuy ? <ArrowDown className="text-green-400" size={20} /> : isDividend ? <Gift className="text-yellow-400" size={20}/> : <ArrowUp className="text-red-400" size={20} />}
                         </div>
                         <div>
                             <p className="font-bold text-lg text-content-100">{tx.ticker}</p>
@@ -190,13 +214,21 @@ const TransactionsScreen: React.FC = () => {
                             </p>
                         </div>
                     </div>
-                    <div className="text-right">
-                       <p className={`font-semibold ${isBuy ? 'text-green-400' : 'text-red-400'}`}>
-                           {isBuy ? '+' : '-'} {tx.quantity} @ {tx.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                       </p>
-                       <p className="text-sm text-content-200">
-                           Total: {(tx.quantity * tx.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                       </p>
+                    <div className="text-right flex-shrink-0 ml-2">
+                       {isDividend ? (
+                          <p className="font-semibold text-yellow-400">
+                              + {tx.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </p>
+                       ) : (
+                           <>
+                               <p className={`font-semibold ${isBuy ? 'text-green-400' : 'text-red-400'}`}>
+                                   {isBuy ? '+' : '-'} {tx.quantity} @ {tx.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                               </p>
+                               <p className="text-sm text-content-200">
+                                   Total: {(tx.quantity * tx.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                               </p>
+                           </>
+                       )}
                     </div>
                      <button onClick={() => handleDeleteTransaction(tx.id)} className="text-content-200 hover:text-red-400 ml-2 p-2 rounded-full hover:bg-base-300">
                         <Trash2 size={18} />

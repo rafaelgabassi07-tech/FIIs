@@ -1,5 +1,4 @@
-
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Transaction, FII } from '../types';
 import { FIIMarketData } from '../services/geminiService';
 
@@ -43,34 +42,38 @@ export const usePortfolio = () => {
         const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
         for (const tx of sortedTransactions) {
+            if (tx.type === 'Dividendo') continue;
+
             if (!portfolio[tx.ticker]) {
                 portfolio[tx.ticker] = { quantity: 0, totalCost: 0 };
             }
             if (tx.type === 'Compra') {
-                const existingQty = portfolio[tx.ticker].quantity;
-                const existingTotalCost = portfolio[tx.ticker].totalCost;
-                
-                const newQty = existingQty + tx.quantity;
-                const newTotalCost = existingTotalCost + (tx.quantity * tx.price);
-
-                portfolio[tx.ticker].quantity = newQty;
-                portfolio[tx.ticker].totalCost = newTotalCost;
-
+                portfolio[tx.ticker].quantity += tx.quantity;
+                portfolio[tx.ticker].totalCost += tx.quantity * tx.price;
             } else { // Venda
-                portfolio[tx.ticker].quantity -= tx.quantity;
+                const currentPosition = portfolio[tx.ticker];
+                if (currentPosition.quantity > 0) {
+                    const averagePrice = currentPosition.totalCost / currentPosition.quantity;
+                    currentPosition.totalCost -= tx.quantity * averagePrice;
+                }
+                currentPosition.quantity -= tx.quantity;
             }
         }
 
         return Object.entries(portfolio)
-            .filter(([, data]) => data.quantity > 0.0001) // Use a small threshold for floating point issues
+            .filter(([, data]) => data.quantity > 0.0001) 
             .map(([ticker, data]) => ({
                 ticker,
                 quantity: data.quantity,
-                averagePrice: data.totalCost / (data.quantity + transactions.filter(t => t.ticker === ticker && t.type === 'Venda').reduce((acc, t) => acc + t.quantity, 0)),
+                averagePrice: data.quantity > 0 ? data.totalCost / data.quantity : 0,
             }));
     }, [transactions]);
 
-    const combineHoldingsWithMarketData = (marketData: FIIMarketData[]): FII[] => {
+    const dividends = useMemo((): Transaction[] => {
+        return transactions.filter(tx => tx.type === 'Dividendo');
+    }, [transactions]);
+
+    const combineHoldingsWithMarketData = useCallback((marketData: FIIMarketData[]): FII[] => {
         const marketDataMap = new Map(marketData.map(d => [d.ticker, d]));
         return holdings.map(holding => {
             const data = marketDataMap.get(holding.ticker);
@@ -80,7 +83,7 @@ export const usePortfolio = () => {
                 currentPrice: data?.currentPrice || 0,
             };
         }).filter(fii => fii.currentPrice > 0);
-    };
+    }, [holdings]);
 
-    return { holdings, transactions, combineHoldingsWithMarketData };
+    return { holdings, transactions, dividends, combineHoldingsWithMarketData };
 };

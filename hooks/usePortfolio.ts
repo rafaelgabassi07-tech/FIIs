@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Transaction, FII } from '../types';
 import { FIIMarketData } from '../services/geminiService';
+import { TRANSACTIONS_STORAGE_KEY } from '../constants';
 
 interface Holding {
   ticker: string;
@@ -14,7 +15,7 @@ export const usePortfolio = () => {
     useEffect(() => {
         const loadTransactions = () => {
             try {
-                const stored = localStorage.getItem('fii-transactions');
+                const stored = localStorage.getItem(TRANSACTIONS_STORAGE_KEY);
                 setTransactions(stored ? JSON.parse(stored) : []);
             } catch (e) {
                 console.error("Failed to load or parse transactions:", e);
@@ -25,7 +26,7 @@ export const usePortfolio = () => {
         loadTransactions();
 
         const handleStorageChange = (event: StorageEvent) => {
-            if (event.key === 'fii-transactions') {
+            if (event.key === TRANSACTIONS_STORAGE_KEY) {
                 loadTransactions();
             }
         };

@@ -2,35 +2,15 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { NewsArticle, GroundingSource } from '../types';
 import { fetchFIINews } from '../services/geminiService';
-import { LoaderCircle, ExternalLink, AlertTriangle } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
+import LoadingSpinner from '../components/LoadingSpinner';
+import ErrorDisplay from '../components/ErrorDisplay';
 
 const NewsCard: React.FC<{ article: NewsArticle }> = ({ article }) => (
   <div className="bg-base-200 rounded-lg p-5 shadow-md">
     <p className="text-sm text-content-200 mb-1">{article.date}</p>
     <h3 className="text-lg font-bold text-content-100 mb-2">{article.title}</h3>
     <p className="text-content-200 leading-relaxed">{article.summary}</p>
-  </div>
-);
-
-const LoadingSpinner: React.FC = () => (
-  <div className="flex flex-col items-center justify-center text-center p-8 text-content-200">
-    <LoaderCircle className="animate-spin h-12 w-12 text-brand-primary mb-4" />
-    <p className="font-semibold">Buscando as últimas notícias...</p>
-    <p className="text-sm">Aguarde, a IA está consultando a web para você.</p>
-  </div>
-);
-
-const ErrorDisplay: React.FC<{ message: string; onRetry: () => void }> = ({ message, onRetry }) => (
-  <div className="text-center p-8 mt-10 bg-base-200 rounded-lg shadow-md">
-    <AlertTriangle className="h-12 w-12 text-red-400 mb-4 mx-auto" />
-    <h3 className="text-xl font-semibold text-content-100">Falha ao buscar notícias</h3>
-    <p className="text-sm text-content-200 mt-2 mb-6 max-w-sm mx-auto">{message}</p>
-    <button
-      onClick={onRetry}
-      className="bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-6 rounded-lg transition-transform transform hover:scale-105"
-    >
-      Tentar Novamente
-    </button>
   </div>
 );
 
@@ -140,10 +120,10 @@ const NewsScreen: React.FC = () => {
 
   const renderContent = () => {
     if (isLoading) {
-      return <LoadingSpinner />;
+      return <LoadingSpinner text="Buscando as últimas notícias..." subtext="Aguarde, a IA está consultando a web para você." />;
     }
     if (error && newsData.articles.length === 0) {
-      return <ErrorDisplay message={error} onRetry={() => loadNews(true)} />;
+      return <ErrorDisplay title="Falha ao buscar notícias" message={error} onRetry={() => loadNews(true)} />;
     }
     return (
       <>

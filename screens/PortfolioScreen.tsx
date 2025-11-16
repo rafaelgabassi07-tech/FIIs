@@ -2,8 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ScreenHeader from '../components/ScreenHeader';
 import { FII, HistoricalDataPoint } from '../types';
 import { fetchFIIsFullData, FIIMarketData } from '../services/geminiService';
-import { TrendingUp, TrendingDown, DollarSign, LoaderCircle, AlertTriangle, ChevronDown, Archive, Gift } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, ChevronDown, Archive, Gift } from 'lucide-react';
 import { usePortfolio } from '../hooks/usePortfolio';
+import LoadingSpinner from '../components/LoadingSpinner';
+import ErrorDisplay from '../components/ErrorDisplay';
 
 const chartPeriods = {
     '1M': { days: 30, label: '1 Mês' },
@@ -101,31 +103,6 @@ const InteractiveChart: React.FC<{ data: HistoricalDataPoint[]; color: string; h
         </div>
     );
 };
-
-const LoadingSpinner: React.FC<{text?: string, subtext?: string}> = ({text, subtext}) => (
-  <div className="flex flex-col items-center justify-center text-center p-8 text-content-200">
-    <LoaderCircle className="animate-spin h-12 w-12 text-brand-primary mb-4" />
-    <p className="font-semibold">{text || "Carregando..."}</p>
-    {subtext && <p className="text-sm">{subtext}</p>}
-  </div>
-);
-
-const ErrorDisplay: React.FC<{ message: string; onRetry: () => void }> = ({ message, onRetry }) => (
-    <div className="flex flex-col items-center justify-center text-center p-8 mt-10 bg-base-200 rounded-lg shadow-md">
-      <AlertTriangle className="h-12 w-12 text-red-400 mb-4" />
-      <h3 className="text-xl font-semibold text-content-100">Ops! Algo deu errado</h3>
-      <p className="text-sm text-content-200 mt-2 mb-6 max-w-sm">
-          Não conseguimos buscar os dados. Por favor, verifique sua conexão e tente novamente.
-      </p>
-      <button
-        onClick={onRetry}
-        className="bg-brand-primary hover:bg-brand-secondary text-white font-bold py-3 px-6 rounded-lg transition-transform transform hover:scale-105 shadow-lg"
-      >
-        Tentar Novamente
-      </button>
-      <p className="text-xs text-base-300 mt-4 italic">Detalhe: {message}</p>
-    </div>
-);
 
 const PortfolioCard: React.FC<{ 
     fii: FII, 
@@ -306,7 +283,7 @@ const PortfolioScreen: React.FC = () => {
       return <LoadingSpinner text="Sincronizando com o mercado..." subtext="Buscando cotações atuais para seus ativos."/>;
     }
     if (error) {
-      return <ErrorDisplay message={error} onRetry={() => loadData(chartPeriod)} />;
+      return <ErrorDisplay message="Não conseguimos buscar os dados. Por favor, verifique sua conexão e tente novamente." details={error} onRetry={() => loadData(chartPeriod)} />;
     }
     if (holdings.length === 0) {
       return (

@@ -1,19 +1,12 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { NewsArticle, GroundingSource, HistoricalDataPoint } from '../types';
 
-// Fix: Adhering to the coding guidelines to use process.env.API_KEY instead of import.meta.env.VITE_API_KEY.
-// This resolves the TypeScript error 'Property 'env' does not exist on type 'ImportMeta''
-// and aligns with standard practices for handling environment variables.
+// The API key is retrieved from environment variables.
+// As per guidelines, we assume process.env.API_KEY is pre-configured and valid,
+// so we pass it directly to the SDK for initialization.
 const getAi = () => {
-  // The API key is retrieved from environment variables.
-  // It is expected to be set in the deployment environment.
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    // This will be caught by the calling function's try-catch block.
-    throw new Error("API_KEY not found in environment variables.");
-  }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 }
 
 export interface FIIMarketData {
@@ -51,9 +44,6 @@ export const fetchFIIsFullData = async (
     const allData: Record<string, FIIFullData> = {};
 
     for (const chunk of tickerChunks) {
-        // Fix: The model needs grounding to access real-time financial data.
-        // Switched to using googleSearch and a more directive prompt to ensure data freshness and reliable JSON output.
-        // This replaces the previous implementation that used responseSchema without grounding, which was likely failing.
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: `Para cada um dos tickers de FIIs brasileiros a seguir: ${chunk.join(', ')}, use a busca para encontrar o nome completo do fundo e seu histórico de preços de fechamento diários dos últimos ${periodInDays} dias. O preço mais recente deve ser o do último dia de negociação disponível. Formate a resposta como um único bloco de código JSON com a seguinte estrutura: {"fiis": [{"ticker": "...", "name": "...", "history": [{"date": "YYYY-MM-DD", "value": 123.45}]}]}. Não inclua nenhum texto ou formatação além do JSON.`,
@@ -111,7 +101,6 @@ export const fetchFIIsFullData = async (
 
   } catch (error) {
     console.error("Error fetching FII data:", error);
-    // Fix: Improved error message to be more helpful, covering both missing and invalid API keys.
     if (error instanceof Error && (error.message.includes("API_KEY") || error.message.includes("API key"))) {
         throw new Error("Falha na autenticação com a API. Verifique se sua chave de API (API_KEY) está configurada corretamente, é válida e possui as permissões necessárias.");
     }
@@ -125,10 +114,6 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
     const ai = getAi();
     const prompt = `Usando a busca, encontre e resuma as 5 notícias mais importantes e recentes sobre o mercado de Fundos de Investimento Imobiliário (FIIs) no Brasil. Para cada notícia, forneça um título, um resumo e a data. A resposta DEVE ser um único bloco de código JSON, sem nenhum texto ou explicação adicional, apenas o JSON. O formato do JSON deve ser: { "articles": [ { "title": "...", "summary": "...", "date": "..." } ] }`;
     
-    // Fix: To fetch recent news, googleSearch tool is required.
-    // This was causing an API error that was misinterpreted as an auth failure.
-    // Switched from responseSchema to googleSearch and manual JSON parsing,
-    // which allows for fetching up-to-date news and their sources.
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
@@ -177,7 +162,6 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
 
   } catch (error) {
     console.error("Error fetching FII news:", error);
-    // Fix: Improved error message to be more helpful, covering both missing and invalid API keys.
     if (error instanceof Error && (error.message.includes("API_KEY") || error.message.includes("API key"))) {
         throw new Error("Falha na autenticação com a API. Verifique se sua chave de API (API_KEY) está configurada corretamente, é válida e possui as permissões necessárias.");
     }

@@ -13,7 +13,7 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (activeTab) {
       case Tab.Carteira:
-        return <PortfolioScreen />;
+        return <PortfolioScreen setActiveTab={setActiveTab} />;
       case Tab.Transacoes:
         return <TransactionsScreen />;
       case Tab.Noticias:
@@ -21,7 +21,7 @@ const App: React.FC = () => {
       case Tab.Menu:
         return <MenuScreen />;
       default:
-        return <PortfolioScreen />;
+        return <PortfolioScreen setActiveTab={setActiveTab} />;
     }
   };
 

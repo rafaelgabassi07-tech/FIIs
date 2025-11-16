@@ -37,3 +37,16 @@ export interface HistoricalDataPoint {
   date: string;
   value: number;
 }
+
+export interface Notification {
+  id: string;
+  type: 'dividend' | 'update' | 'system';
+  message: string;
+  date: string;
+  isRead: boolean;
+  relatedTicker?: string;
+  action?: {
+    type: 'navigate';
+    tab: Tab;
+  };
+}

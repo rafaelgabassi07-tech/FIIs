@@ -1,15 +1,19 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
-import { FII, HistoricalDataPoint } from '../types';
-import { fetchFIIsFullData, FIIMarketData } from '../services/geminiService';
-import { TrendingUp, TrendingDown, Wallet, Landmark, HandCoins, BarChart, ChevronDown, Archive, Gift, PieChart } from 'lucide-react';
+import { FII, HistoricalDataPoint, Tab } from '../types';
+import { fetchFIIsFullData, FIIMarketData, ApiKeyMissingError, NetworkError, ParsingError } from '../services/geminiService';
+import { TrendingUp, TrendingDown, Wallet, Landmark, HandCoins, BarChart, ChevronDown, Archive, Gift, PieChart, Bell } from 'lucide-react';
 import { usePortfolio } from '../hooks/usePortfolio';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorDisplay from '../components/ErrorDisplay';
 import InteractiveChart from '../components/InteractiveChart';
 import AllocationPieChart from '../components/AllocationPieChart';
 import StatCard from '../components/StatCard';
+import { useNotifications } from '../hooks/useNotifications';
+import NotificationPanel from '../components/NotificationPanel';
+import ApiKeyPrompt from '../components/ApiKeyPrompt';
+
 
 const chartPeriods = {
     '1M': { days: 30, label: '1 Mês' },
@@ -71,8 +75,16 @@ const PortfolioCard: React.FC<{
   );
 };
 
-const PortfolioScreen: React.FC = () => {
+interface PortfolioScreenProps {
+  setActiveTab: (tab: Tab) => void;
+}
+
+
+const PortfolioScreen: React.FC<PortfolioScreenProps> = ({ setActiveTab }) => {
   const { holdings, dividends, realizedGains, investedHistory, combineHoldingsWithMarketData } = usePortfolio();
+  const { notifications, unreadCount, markAllAsRead, handleNotificationClick } = useNotifications(setActiveTab);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
+
   const [portfolio, setPortfolio] = useState<FII[]>([]);
   const [portfolioHistory, setPortfolioHistory] = useState<HistoricalDataPoint[]>([]);
   const [individualHistories, setIndividualHistories] = useState<Record<string, HistoricalDataPoint[]>>({});
@@ -82,7 +94,9 @@ const PortfolioScreen: React.FC = () => {
   
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isChartLoading, setIsChartLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; message: string; details: string; } | null>(null);
+  const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
+
 
   const loadData = useCallback(async (periodKey: ChartPeriodKey) => {
     if (holdings.length === 0) {
@@ -97,6 +111,7 @@ const PortfolioScreen: React.FC = () => {
     setIsLoading(true);
     setIsChartLoading(true);
     setError(null);
+    setIsApiKeyMissing(false);
     try {
       const tickers = holdings.map(h => h.ticker);
       const periodInDays = chartPeriods[periodKey].days;
@@ -138,8 +153,21 @@ const PortfolioScreen: React.FC = () => {
       setPortfolioHistory(aggregatedHistory);
 
     } catch (err) {
-      if (err instanceof Error) { setError(err.message); } 
-      else { setError('Ocorreu um erro desconhecido.'); }
+      const error = err as Error;
+      switch(error.name) {
+          case 'ApiKeyMissingError':
+              setIsApiKeyMissing(true);
+              break;
+          case 'NetworkError':
+              setError({ title: "Falha de Conexão", message: "Não foi possível conectar à API. Verifique sua internet.", details: error.message });
+              break;
+          case 'ParsingError':
+              setError({ title: "Dados Inconsistentes", message: "A resposta da IA não pôde ser processada.", details: error.message });
+              break;
+          default:
+              setError({ title: "Erro Inesperado", message: "Ocorreu um problema inesperado.", details: error.message || 'Sem detalhes adicionais.' });
+              break;
+      }
     } finally {
       setIsLoading(false);
       setIsChartLoading(false);
@@ -154,32 +182,41 @@ const PortfolioScreen: React.FC = () => {
       setSelectedFii(prev => (prev === ticker ? null : ticker));
   };
   
-  const alignedInvestedHistory = useMemo(() => {
-    if (portfolioHistory.length === 0 || investedHistory.length === 0) return [];
-
-    // Fix: Explicitly type the Map to ensure correct type inference for keys and values.
-    // This resolves issues where sortedInvestedTimestamps elements were inferred as 'unknown'.
-    const investedMap = new Map<number, number>(investedHistory.map(p => [new Date(p.date).getTime(), p.value]));
-    const sortedInvestedTimestamps = Array.from(investedMap.keys()).sort((a,b) => a - b);
-
-    let lastInvestedValue = 0;
-    const firstPortfolioTimestamp = new Date(portfolioHistory[0].date).getTime();
-    
-    // Find the invested value right before the chart's period starts
-    const initialInvestedTimestamps = sortedInvestedTimestamps.filter(t => t < firstPortfolioTimestamp);
-     if (initialInvestedTimestamps.length > 0) {
-        lastInvestedValue = investedMap.get(initialInvestedTimestamps[initialInvestedTimestamps.length - 1])!;
+  const alignedChartData = useMemo(() => {
+    if (portfolioHistory.length === 0) {
+      return { portfolio: [], invested: [] };
+    }
+    if (investedHistory.length === 0) {
+      return { portfolio: portfolioHistory, invested: [] };
     }
 
-    return portfolioHistory.map(p => {
-        const currentTimestamp = new Date(p.date).getTime();
-        const relevantTimestamps = sortedInvestedTimestamps.filter(t => t > (currentTimestamp - 86400000) && t <= currentTimestamp);
-        
-        if (relevantTimestamps.length > 0) {
-            lastInvestedValue = investedMap.get(relevantTimestamps[relevantTimestamps.length - 1])!;
-        }
-        return { date: p.date, value: lastInvestedValue };
-    });
+    const portfolioMap = new Map(portfolioHistory.map(p => [p.date, p.value]));
+    const investedMap = new Map(investedHistory.map(p => [p.date, p.value]));
+
+    const allDates = [...new Set([...portfolioHistory.map(p => p.date), ...investedHistory.map(p => p.date)])];
+    allDates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+    let lastPortfolioValue = 0;
+    let lastInvestedValue = 0;
+
+    const alignedPortfolio: HistoricalDataPoint[] = [];
+    const alignedInvested: HistoricalDataPoint[] = [];
+
+    for (const date of allDates) {
+      if (portfolioMap.has(date)) {
+        lastPortfolioValue = portfolioMap.get(date)!;
+      }
+      if (investedMap.has(date)) {
+        lastInvestedValue = investedMap.get(date)!;
+      }
+      
+      if (lastPortfolioValue > 0 || alignedPortfolio.length > 0) {
+          alignedPortfolio.push({ date, value: lastPortfolioValue });
+          alignedInvested.push({ date, value: lastInvestedValue });
+      }
+    }
+
+    return { portfolio: alignedPortfolio, invested: alignedInvested };
   }, [portfolioHistory, investedHistory]);
 
   const portfolioSummary = useMemo(() => {
@@ -189,7 +226,6 @@ const PortfolioScreen: React.FC = () => {
 
     const totalReceived = totalDividendsReceived + realizedGains;
     
-    // Total Return = (Current Value - Total Cost Basis) + Total Received (Dividends + Realized Gains)
     const totalReturn = (totalValue - totalCost) + totalReceived;
     const totalReturnPercent = totalCost > 0 ? (totalReturn / totalCost) * 100 : 0;
     const isTotalPositive = totalReturn >= 0;
@@ -232,8 +268,11 @@ const PortfolioScreen: React.FC = () => {
     if (isLoading && holdings.length > 0) {
       return <LoadingSpinner text="Sincronizando com o mercado..." subtext="Buscando cotações atuais para seus ativos."/>;
     }
+    if (isApiKeyMissing) {
+      return <ApiKeyPrompt onKeyConfigured={() => loadData(chartPeriod)} />;
+    }
     if (error) {
-      return <ErrorDisplay message="Não conseguimos buscar os dados. Por favor, verifique sua conexão e tente novamente." details={error} onRetry={() => loadData(chartPeriod)} />;
+      return <ErrorDisplay title={error.title} message={error.message} details={error.details} onRetry={() => loadData(chartPeriod)} />;
     }
     if (holdings.length === 0) {
       return (
@@ -285,7 +324,7 @@ const PortfolioScreen: React.FC = () => {
                       </button>
                   ))}
               </div>
-              {isChartLoading ? <LoadingSpinner text="Calculando desempenho..."/> : <InteractiveChart data={portfolioHistory} investedData={alignedInvestedHistory} color="#10B981" />}
+              {isChartLoading ? <LoadingSpinner text="Calculando desempenho..."/> : <InteractiveChart data={alignedChartData.portfolio} investedData={alignedChartData.invested} color="#10B981" />}
           </div>
            <div className="lg:col-span-2 bg-base-200 p-4 rounded-xl shadow-lg">
                 <div className="flex items-center gap-2 mb-4">
@@ -348,8 +387,35 @@ const PortfolioScreen: React.FC = () => {
 
   return (
     <div>
-      <ScreenHeader title="Carteira" subtitle="Seu patrimônio e desempenho" />
-      <div className="p-4">
+       <div className="relative">
+         <ScreenHeader title="Carteira" subtitle="Seu patrimônio e desempenho">
+            <button onClick={() => setIsPanelOpen(p => !p)} className="relative p-2 rounded-full hover:bg-base-300 transition-colors">
+                <Bell className="text-content-100" />
+                {unreadCount > 0 && (
+                    <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                    </span>
+                )}
+            </button>
+         </ScreenHeader>
+         {isPanelOpen && (
+            <div className="absolute top-16 right-4 z-20">
+              <NotificationPanel 
+                  notifications={notifications}
+                  unreadCount={unreadCount}
+                  onClose={() => setIsPanelOpen(false)}
+                  onMarkAllRead={markAllAsRead}
+                  onNotificationClick={(notification) => {
+                    handleNotificationClick(notification);
+                    setIsPanelOpen(false);
+                  }}
+              />
+            </div>
+          )}
+      </div>
+
+      <div className="p-4 relative">
         {renderContent()}
       </div>
     </div>

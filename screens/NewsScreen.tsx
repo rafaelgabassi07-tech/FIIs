@@ -2,10 +2,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { NewsArticle, GroundingSource } from '../types';
-import { fetchFIINews } from '../services/geminiService';
+import { fetchFIINews, ApiKeyMissingError } from '../services/geminiService';
 import { ExternalLink, Inbox } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorDisplay from '../components/ErrorDisplay';
+import ApiKeyPrompt from '../components/ApiKeyPrompt';
 
 const NewsCard: React.FC<{ article: NewsArticle }> = ({ article }) => (
   <div className="bg-base-200 rounded-lg p-5 shadow-md animate-fade-in-up">
@@ -19,15 +20,19 @@ const NewsScreen: React.FC = () => {
   const [newsData, setNewsData] = useState<{ articles: NewsArticle[], sources: GroundingSource[] }>({ articles: [], sources: [] });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
   
   const loadNews = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setIsApiKeyMissing(false);
     try {
       const data = await fetchFIINews();
       setNewsData(data);
     } catch (err) {
-        if (err instanceof Error) {
+        if (err instanceof ApiKeyMissingError) {
+          setIsApiKeyMissing(true);
+        } else if (err instanceof Error) {
             setError(err.message);
         } else {
             setError('Ocorreu um erro desconhecido.');
@@ -44,6 +49,9 @@ const NewsScreen: React.FC = () => {
   const renderContent = () => {
     if (isLoading) {
       return <LoadingSpinner text="Buscando as últimas notícias..." subtext="Aguarde, a IA está consultando a web para você." />;
+    }
+     if (isApiKeyMissing) {
+      return <ApiKeyPrompt onKeyConfigured={loadNews} />;
     }
     if (error) {
       return <ErrorDisplay title="Falha ao buscar notícias" message={error} onRetry={loadNews} />;

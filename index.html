@@ -12,13 +12,16 @@
         theme: {
           extend: {
             colors: {
-              'brand-primary': '#10B981', // Emerald 500
-              'brand-secondary': '#059669', // Emerald 600
-              'base-100': '#1F2937', // Gray 800
-              'base-200': '#374151', // Gray 700
-              'base-300': '#4B5563', // Gray 600
-              'content-100': '#F9FAFB', // Gray 50
-              'content-200': '#D1D5DB', // Gray 300
+              'base-100': '#1F2937', // Dark blue-gray, main background
+              'base-200': '#374151', // Lighter gray, for cards
+              'base-300': '#4B5563', // Even lighter, for borders/hover
+              'content-100': '#F9FAFB', // White, for primary text
+              'content-200': '#D1D5DB', // Light gray, for secondary text
+              'brand-primary': '#10B981', // Emerald green
+              'brand-secondary': '#059669', // Darker emerald
+            },
+            animation: {
+              'fade-in-up': 'fade-in-up 0.3s ease-out forwards',
             },
             keyframes: {
               'fade-in-up': {
@@ -26,12 +29,9 @@
                 '100%': { opacity: '1', transform: 'translateY(0)' },
               },
             },
-            animation: {
-              'fade-in-up': 'fade-in-up 0.3s ease-out forwards',
-            },
           },
         },
-      }
+      };
     </script>
   <script type="importmap">
 {

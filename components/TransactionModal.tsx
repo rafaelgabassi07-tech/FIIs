@@ -1,19 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Transaction } from '../types';
 import { X, ArrowDown, ArrowUp, Gift } from 'lucide-react';
 
 interface TransactionModalProps {
   onClose: () => void;
-  onAdd: (transaction: Omit<Transaction, 'id'>) => void;
+  onSubmit: (transaction: Omit<Transaction, 'id'> | Transaction) => void;
+  transactionToEdit?: Transaction | null;
 }
 
-const TransactionModal: React.FC<TransactionModalProps> = ({ onClose, onAdd }) => {
+const TransactionModal: React.FC<TransactionModalProps> = ({ onClose, onSubmit, transactionToEdit }) => {
+  const isEditing = !!transactionToEdit;
+  
   const [ticker, setTicker] = useState('');
   const [type, setType] = useState<'Compra' | 'Venda' | 'Dividendo'>('Compra');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (transactionToEdit) {
+        setTicker(transactionToEdit.ticker);
+        setType(transactionToEdit.type);
+        setQuantity(transactionToEdit.type === 'Dividendo' ? '' : String(transactionToEdit.quantity));
+        setPrice(String(transactionToEdit.price));
+        setDate(transactionToEdit.date);
+    } else {
+        setDate(new Date().toISOString().split('T')[0]);
+    }
+  }, [transactionToEdit]);
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,13 +50,20 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ onClose, onAdd }) =
     }
 
     setError('');
-    onAdd({
+    
+    const transactionData = {
       ticker: ticker.toUpperCase().trim(),
       type,
       quantity: numQuantity,
       price: numPrice,
       date,
-    });
+    };
+    
+    if (isEditing) {
+        onSubmit({ ...transactionData, id: transactionToEdit.id });
+    } else {
+        onSubmit(transactionData);
+    }
   };
 
   return (
@@ -50,7 +73,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ onClose, onAdd }) =
           <X size={24} />
         </button>
         <div className="p-6">
-          <h2 className="text-2xl font-bold mb-4 text-content-100">Nova Transação</h2>
+          <h2 className="text-2xl font-bold mb-4 text-content-100">{isEditing ? 'Editar Transação' : 'Nova Transação'}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="ticker" className="block text-sm font-medium text-content-200 mb-1">Ticker do Ativo</label>
@@ -136,7 +159,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ onClose, onAdd }) =
                     type="submit"
                     className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 shadow-lg"
                 >
-                    Adicionar Transação
+                    {isEditing ? 'Salvar Alterações' : 'Adicionar Transação'}
                 </button>
             </div>
           </form>

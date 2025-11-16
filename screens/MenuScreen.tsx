@@ -1,9 +1,12 @@
 
 import React, { useState } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
-import { User, Bell, Shield, LogOut, ChevronRight, KeyRound, CheckCircle, AlertCircle } from 'lucide-react';
+import { User, Bell, Shield, LogOut, ChevronRight, KeyRound, CheckCircle, AlertCircle, Download, Upload, CloudDownload, Info } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import ApiKeyModal from '../components/ApiKeyModal';
+import { TRANSACTIONS_STORAGE_KEY } from '../constants';
+import { useUpdateCheck } from '../hooks/useUpdateCheck';
+import UpdateModal from '../components/UpdateModal';
 
 const MenuItem: React.FC<{ icon: React.ElementType; text: string; onClick?: () => void; status?: React.ReactNode }> = ({ icon: Icon, text, onClick, status }) => (
   <button onClick={onClick} className="w-full flex items-center justify-between p-4 bg-base-200 rounded-lg hover:bg-base-300 transition-colors duration-200">
@@ -48,10 +51,68 @@ const MenuSection: React.FC<{ title: string, children: React.ReactNode }> = ({ t
 const MenuScreen: React.FC = () => {
     const [notificationsEnabled, setNotificationsEnabled] = useState(false);
     const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+    const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
     const { apiKey, isLoading } = useSettings();
+    const { isUpdateAvailable } = useUpdateCheck();
 
     const handleNotificationToggle = () => {
         setNotificationsEnabled(prevState => !prevState);
+    };
+
+    const handleExport = () => {
+        try {
+            const transactions = localStorage.getItem(TRANSACTIONS_STORAGE_KEY);
+            if (!transactions || JSON.parse(transactions).length === 0) {
+                alert("Nenhuma transação para exportar.");
+                return;
+            }
+            const blob = new Blob([transactions], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `meu-fii-app-backup-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Erro ao exportar dados:", error);
+            alert("Ocorreu um erro ao exportar seus dados.");
+        }
+    };
+    
+    const handleImport = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (event) => {
+            const file = (event.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+    
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const text = e.target?.result;
+                    if (typeof text !== 'string') throw new Error("File content is not text.");
+                    
+                    const data = JSON.parse(text);
+                    if (!Array.isArray(data) || (data.length > 0 && (typeof data[0].id === 'undefined' || typeof data[0].ticker === 'undefined'))) {
+                         throw new Error("Formato de arquivo inválido.");
+                    }
+    
+                    if (window.confirm("Atenção: Isso substituirá todas as suas transações atuais pelos dados do arquivo. Deseja continuar?")) {
+                        localStorage.setItem(TRANSACTIONS_STORAGE_KEY, text);
+                        alert("Dados importados com sucesso! O aplicativo será recarregado para aplicar as mudanças.");
+                        window.location.reload();
+                    }
+                } catch (error) {
+                    console.error("Erro ao importar dados:", error);
+                    alert(`Ocorreu um erro ao importar o arquivo: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
     };
     
     const apiKeyStatus = isLoading ? (
@@ -63,6 +124,16 @@ const MenuScreen: React.FC = () => {
     ) : (
         <span className="flex items-center gap-1 text-xs text-yellow-400">
             <AlertCircle size={14} /> Necessária
+        </span>
+    );
+
+    const updateStatus = isUpdateAvailable ? (
+        <span className="flex items-center gap-1 text-xs text-blue-400">
+            <Info size={14} /> Nova versão
+        </span>
+    ) : (
+        <span className="flex items-center gap-1 text-xs text-content-200">
+            <CheckCircle size={14} /> Atualizado
         </span>
     );
 
@@ -83,16 +154,17 @@ const MenuScreen: React.FC = () => {
                             onClick={() => setIsApiModalOpen(true)}
                             status={apiKeyStatus}
                          />
+                         <MenuItem 
+                            icon={CloudDownload} 
+                            text="Verificar Atualização" 
+                            onClick={() => setIsUpdateModalOpen(true)}
+                            status={updateStatus}
+                         />
                     </MenuSection>
 
-                    <MenuSection title="Notificações">
-                        <div className="flex items-center justify-between p-4 bg-base-200 rounded-lg">
-                            <div className="flex items-center">
-                                <Bell className="w-6 h-6 text-brand-primary mr-4" />
-                                <span className="text-lg text-content-100">Alertas de Novas Notícias</span>
-                            </div>
-                            <ToggleSwitch isOn={notificationsEnabled} onToggle={handleNotificationToggle} />
-                        </div>
+                    <MenuSection title="Gerenciamento de Dados">
+                        <MenuItem icon={Download} text="Exportar Dados" onClick={handleExport} />
+                        <MenuItem icon={Upload} text="Importar Dados" onClick={handleImport} />
                     </MenuSection>
                     
                     <MenuSection title="Geral">
@@ -101,6 +173,7 @@ const MenuScreen: React.FC = () => {
                 </div>
             </div>
             {isApiModalOpen && <ApiKeyModal onClose={() => setIsApiModalOpen(false)} />}
+            {isUpdateModalOpen && <UpdateModal onClose={() => setIsUpdateModalOpen(false)} />}
         </>
     );
 };

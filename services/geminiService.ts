@@ -4,6 +4,28 @@ import { NewsArticle, GroundingSource, HistoricalDataPoint } from '../types';
 import { API_KEY_STORAGE_KEY } from '../constants';
 import cacheService from './cacheService';
 
+export class ApiKeyMissingError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ApiKeyMissingError';
+    }
+}
+
+export class NetworkError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'NetworkError';
+    }
+}
+
+export class ParsingError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ParsingError';
+    }
+}
+
+
 const getApiKey = (): string | null => {
     try {
         return localStorage.getItem(API_KEY_STORAGE_KEY);
@@ -16,7 +38,7 @@ const getApiKey = (): string | null => {
 const getAi = () => {
   const apiKey = getApiKey();
   if (!apiKey) {
-      throw new Error("Chave de API do Google AI não configurada. Por favor, adicione sua chave na aba 'Menu'.");
+      throw new ApiKeyMissingError("Chave de API do Google AI não configurada. Por favor, adicione sua chave na aba 'Menu'.");
   }
   return new GoogleGenAI({ apiKey });
 }
@@ -32,6 +54,12 @@ export interface FIIFullData {
     name: string;
     currentPrice: number;
     history: HistoricalDataPoint[];
+}
+
+export interface DividendEvent {
+    ticker: string;
+    type: 'Data Com' | 'Pagamento';
+    date: string;
 }
 
 
@@ -85,6 +113,9 @@ export const fetchFIIsFullData = async (
         }
         
         try {
+            if (!jsonString.trim()) {
+                throw new Error("Empty response from AI.");
+            }
             const parsed = JSON.parse(jsonString);
 
             if (parsed.fiis) {
@@ -103,11 +134,13 @@ export const fetchFIIsFullData = async (
                     };
                 }
               }
+            } else {
+                 throw new Error("JSON response is missing the 'fiis' property.");
             }
         } catch (parseError) {
             console.error("Error parsing JSON from Gemini response:", parseError);
             console.error("Original response text for debugging:", response.text);
-            throw new Error("A IA retornou dados em um formato inesperado. Tente novamente.");
+            throw new ParsingError("A IA retornou dados em um formato inesperado. Tente novamente.");
         }
         
         if (tickerChunks.indexOf(chunk) < tickerChunks.length - 1) {
@@ -120,10 +153,10 @@ export const fetchFIIsFullData = async (
 
   } catch (error) {
     console.error("Error fetching FII data:", error);
-    if (error instanceof Error && error.message.includes("não configurada")) {
+    if (error instanceof ApiKeyMissingError || error instanceof ParsingError) {
         throw error;
     }
-    throw new Error("Não foi possível buscar os dados dos FIIs. A IA pode estar sobrecarregada ou ocorreu um erro de rede. Tente novamente mais tarde.");
+    throw new NetworkError("Não foi possível buscar os dados dos FIIs. A IA pode estar sobrecarregada ou ocorreu um erro de rede. Tente novamente mais tarde.");
   }
 };
 
@@ -167,6 +200,7 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
     } catch (parseError) {
         console.error("Error parsing JSON from Gemini news response:", parseError);
         console.error("Original news response text for debugging:", response.text);
+        throw new ParsingError("A IA retornou as notícias em um formato inesperado.");
     }
 
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
@@ -188,9 +222,56 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
 
   } catch (error) {
     console.error("Error fetching FII news:", error);
-     if (error instanceof Error && error.message.includes("não configurada")) {
+     if (error instanceof ApiKeyMissingError || error instanceof ParsingError) {
         throw error;
     }
-    throw new Error("Não foi possível buscar as notícias. A IA pode estar ocupada, tente novamente.");
+    throw new NetworkError("Não foi possível buscar as notícias. A IA pode estar ocupada, tente novamente.");
   }
+};
+
+export const fetchDividendCalendar = async (tickers: string[]): Promise<DividendEvent[]> => {
+    if (tickers.length === 0) {
+        return [];
+    }
+    const sortedTickersKey = [...tickers].sort().join(',');
+    const cacheKey = `dividend-calendar-${sortedTickersKey}`;
+    const cachedData = cacheService.get<DividendEvent[]>(cacheKey);
+    if (cachedData) {
+        return cachedData;
+    }
+    
+    try {
+        const ai = getAi();
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `Para os FIIs a seguir: ${tickers.join(', ')}, use a busca para encontrar as próximas datas de "Data Com" e "Data de Pagamento" de dividendos já anunciados. Se não houver data anunciada, não inclua o ticker. Formate a resposta como um único bloco de código JSON com a estrutura: {"events": [{"ticker": "...", "type": "Data Com" | "Pagamento", "date": "YYYY-MM-DD"}]}. Não inclua texto ou formatação além do JSON.`,
+            config: {
+                tools: [{googleSearch: {}}],
+            },
+        });
+
+        let jsonString = response.text;
+        
+        const jsonMatch = jsonString.match(/```json\n([\s\S]*?)\n```/);
+        if (jsonMatch && jsonMatch[1]) {
+            jsonString = jsonMatch[1];
+        } else {
+            const startIndex = jsonString.indexOf('{');
+            const endIndex = jsonString.lastIndexOf('}');
+            if (startIndex !== -1 && endIndex !== -1) {
+                jsonString = jsonString.substring(startIndex, endIndex + 1);
+            }
+        }
+        
+        const parsed = JSON.parse(jsonString);
+        const events = (parsed.events || []) as DividendEvent[];
+        
+        cacheService.set(cacheKey, events, 24 * 60); // Cache for 24 hours
+        return events;
+
+    } catch (error) {
+        console.error("Error fetching dividend calendar:", error);
+        // Don't throw a fatal error, just return empty array
+        return [];
+    }
 };

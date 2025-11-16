@@ -56,7 +56,7 @@ export const fetchFIIsFullData = async (
         // This replaces the previous implementation that used responseSchema without grounding, which was likely failing.
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
-          contents: `Usando a busca, para os FIIs brasileiros com os tickers '${chunk.join(', ')}', forneça o nome completo e os dados históricos de preço de fechamento diário dos últimos ${periodInDays} dias. O preço mais recente deve ser o preço de fechamento do último dia de negociação. A resposta DEVE ser um único bloco de código JSON, sem nenhum texto ou explicação adicional, apenas o JSON. O formato do JSON deve ser: { "fiis": [ { "ticker": "...", "name": "...", "history": [ { "date": "YYYY-MM-DD", "value": 123.45 } ] } ] }`,
+          contents: `Para cada um dos tickers de FIIs brasileiros a seguir: ${chunk.join(', ')}, use a busca para encontrar o nome completo do fundo e seu histórico de preços de fechamento diários dos últimos ${periodInDays} dias. O preço mais recente deve ser o do último dia de negociação disponível. Formate a resposta como um único bloco de código JSON com a seguinte estrutura: {"fiis": [{"ticker": "...", "name": "...", "history": [{"date": "YYYY-MM-DD", "value": 123.45}]}]}. Não inclua nenhum texto ou formatação além do JSON.`,
           config: {
             tools: [{googleSearch: {}}],
           },
@@ -123,40 +123,42 @@ export const fetchFIIsFullData = async (
 export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources: GroundingSource[] }> => {
   try {
     const ai = getAi();
-    const prompt = `Busque e resuma as 10 notícias mais importantes da semana sobre o mercado de Fundos de Investimento Imobiliário (FIIs) no Brasil. Para cada notícia, forneça um título, um resumo e a data.`;
+    const prompt = `Usando a busca, encontre e resuma as 5 notícias mais importantes e recentes sobre o mercado de Fundos de Investimento Imobiliário (FIIs) no Brasil. Para cada notícia, forneça um título, um resumo e a data. A resposta DEVE ser um único bloco de código JSON, sem nenhum texto ou explicação adicional, apenas o JSON. O formato do JSON deve ser: { "articles": [ { "title": "...", "summary": "...", "date": "..." } ] }`;
     
-    // Fix: Using googleSearch with JSON parsing is against the guidelines as the output format is not guaranteed.
-    // Switched to using responseSchema to enforce a JSON output. This makes the response parsing reliable.
-    // As a result, grounding sources from googleSearch will not be available, but the UI handles this gracefully.
+    // Fix: To fetch recent news, googleSearch tool is required.
+    // This was causing an API error that was misinterpreted as an auth failure.
+    // Switched from responseSchema to googleSearch and manual JSON parsing,
+    // which allows for fetching up-to-date news and their sources.
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-                articles: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            title: { type: Type.STRING, description: "O título da notícia." },
-                            summary: { type: Type.STRING, description: "Um resumo da notícia." },
-                            date: { type: Type.STRING, description: "A data da notícia." },
-                        },
-                        required: ["title", "summary", "date"],
-                    }
-                }
-            },
-            required: ["articles"],
-        }
+        tools: [{googleSearch: {}}],
       },
     });
 
-    const jsonString = response.text;
-    const parsed = JSON.parse(jsonString);
-    const articles = parsed.articles || [];
+    let jsonString = response.text;
+    
+    // Robustly extract JSON from the response text.
+    const jsonMatch = jsonString.match(/```json\n([\s\S]*?)\n```/);
+    if (jsonMatch && jsonMatch[1]) {
+        jsonString = jsonMatch[1];
+    } else {
+        const startIndex = jsonString.indexOf('{');
+        const endIndex = jsonString.lastIndexOf('}');
+        if (startIndex !== -1 && endIndex !== -1) {
+            jsonString = jsonString.substring(startIndex, endIndex + 1);
+        }
+    }
+
+    let articles: NewsArticle[] = [];
+    try {
+        const parsed = JSON.parse(jsonString);
+        articles = parsed.articles || [];
+    } catch (parseError) {
+        console.error("Error parsing JSON from Gemini news response:", parseError);
+        console.error("Original news response text for debugging:", response.text);
+    }
 
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
     const uniqueSources = new Map<string, GroundingSource>();

@@ -2,6 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { NewsArticle, GroundingSource, HistoricalDataPoint } from '../types';
 import { API_KEY_STORAGE_KEY } from '../constants';
+import cacheService from './cacheService';
 
 const getApiKey = (): string | null => {
     try {
@@ -45,6 +46,13 @@ export const fetchFIIsFullData = async (
     return {};
   }
   
+  const sortedTickersKey = [...tickers].sort().join(',');
+  const cacheKey = `fiis-full-data-${periodInDays}-${sortedTickersKey}`;
+  const cachedData = cacheService.get<Record<string, FIIFullData>>(cacheKey);
+  if (cachedData) {
+      return cachedData;
+  }
+
   try {
     const ai = getAi();
     const tickerChunks = [];
@@ -107,6 +115,7 @@ export const fetchFIIsFullData = async (
         }
     }
     
+    cacheService.set(cacheKey, allData, 15); // Cache de 15 minutos
     return allData;
 
   } catch (error) {
@@ -120,6 +129,12 @@ export const fetchFIIsFullData = async (
 
 
 export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources: GroundingSource[] }> => {
+  const cacheKey = 'fii-news';
+  const cachedData = cacheService.get<{ articles: NewsArticle[], sources: GroundingSource[] }>(cacheKey);
+  if (cachedData) {
+      return cachedData;
+  }
+
   try {
     const ai = getAi();
     const prompt = `Usando a busca, encontre e resuma as 5 notícias mais importantes e recentes sobre o mercado de Fundos de Investimento Imobiliário (FIIs) no Brasil. Para cada notícia, forneça um título, um resumo e a data. A resposta DEVE ser um único bloco de código JSON, sem nenhum texto ou explicação adicional, apenas o JSON. O formato do JSON deve ser: { "articles": [ { "title": "...", "summary": "...", "date": "..." } ] }`;
@@ -166,8 +181,10 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
     });
     
     const sources = Array.from(uniqueSources.values());
-
-    return { articles, sources };
+    const result = { articles, sources };
+    
+    cacheService.set(cacheKey, result, 12 * 60); // Cache de 12 horas
+    return result;
 
   } catch (error) {
     console.error("Error fetching FII news:", error);

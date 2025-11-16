@@ -1,137 +1,64 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { NewsArticle, GroundingSource } from '../types';
 import { fetchFIINews } from '../services/geminiService';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Inbox } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorDisplay from '../components/ErrorDisplay';
 
 const NewsCard: React.FC<{ article: NewsArticle }> = ({ article }) => (
-  <div className="bg-base-200 rounded-lg p-5 shadow-md">
+  <div className="bg-base-200 rounded-lg p-5 shadow-md animate-fade-in-up">
     <p className="text-sm text-content-200 mb-1">{article.date}</p>
     <h3 className="text-lg font-bold text-content-100 mb-2">{article.title}</h3>
     <p className="text-content-200 leading-relaxed">{article.summary}</p>
   </div>
 );
 
-const getNextCheckTime = (): Date => {
-  const nextCheck = new Date();
-  const currentHour = nextCheck.getHours();
-  const currentDay = nextCheck.getDay();
-
-  if (currentDay === 6) { // Saturday
-    nextCheck.setDate(nextCheck.getDate() + 2);
-    nextCheck.setHours(9, 0, 1, 0);
-    return nextCheck;
-  }
-  if (currentDay === 0) { // Sunday
-    nextCheck.setDate(nextCheck.getDate() + 1);
-    nextCheck.setHours(9, 0, 1, 0);
-    return nextCheck;
-  }
-  
-  if (currentHour < 9) {
-    nextCheck.setHours(9, 0, 1, 0);
-  } else if (currentHour < 14) {
-    nextCheck.setHours(14, 0, 1, 0);
-  } else {
-    const daysToAdd = currentDay === 5 ? 3 : 1;
-    nextCheck.setDate(nextCheck.getDate() + daysToAdd);
-    nextCheck.setHours(9, 0, 1, 0);
-  }
-  return nextCheck;
-};
-
 const NewsScreen: React.FC = () => {
   const [newsData, setNewsData] = useState<{ articles: NewsArticle[], sources: GroundingSource[] }>({ articles: [], sources: [] });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string>('');
   
-  const timerRef = useRef<number | null>(null);
-
-  const loadNews = useCallback(async (forceFetch = false) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-
-    const hasData = !!localStorage.getItem('fiiNewsData');
-    if (forceFetch || !hasData) {
-      setIsLoading(true);
-    }
+  const loadNews = useCallback(async () => {
+    setIsLoading(true);
     setError(null);
-    
-    if (hasData) {
-      try {
-        setNewsData(JSON.parse(localStorage.getItem('fiiNewsData')!));
-      } catch {
-        localStorage.removeItem('fiiNewsData'); // Clear corrupted data
-      }
-    }
-
-    const now = new Date();
-    const day = now.getDay();
-    const isWeekend = day === 0 || day === 6;
-    const lastFetchTimestamp = parseInt(localStorage.getItem('fiiNewsTimestamp') || '0', 10);
-    let shouldFetch = forceFetch;
-
-    if (!shouldFetch) {
-      if (!isWeekend) {
-        const today9AM = new Date(now).setHours(9, 0, 0, 0);
-        const today2PM = new Date(now).setHours(14, 0, 0, 0);
-        if (now.getTime() >= today2PM && lastFetchTimestamp < today2PM) shouldFetch = true;
-        else if (now.getTime() >= today9AM && now.getTime() < today2PM && lastFetchTimestamp < today9AM) shouldFetch = true;
-      }
-      if (!hasData && !isWeekend && now.getHours() >= 9) shouldFetch = true;
-    }
-    
-    if (shouldFetch) {
-      try {
-        const { articles, sources } = await fetchFIINews();
-        const dataToStore = { articles, sources };
-        setNewsData(dataToStore);
-        localStorage.setItem('fiiNewsData', JSON.stringify(dataToStore));
-        localStorage.setItem('fiiNewsTimestamp', String(now.getTime()));
-      } catch (err) {
-          if (err instanceof Error) {
-              setError(err.message);
-          } else {
-              setError('Ocorreu um erro desconhecido.');
-          }
-      }
-    }
-
-    setIsLoading(false);
-
-    const nextCheckTime = getNextCheckTime();
-    setStatusMessage(`Próxima atualização: ${nextCheckTime.toLocaleString('pt-BR')}`);
-    
-    const delay = nextCheckTime.getTime() - new Date().getTime();
-    if (delay > 0) {
-      timerRef.current = window.setTimeout(() => loadNews(false), delay);
+    try {
+      const data = await fetchFIINews();
+      setNewsData(data);
+    } catch (err) {
+        if (err instanceof Error) {
+            setError(err.message);
+        } else {
+            setError('Ocorreu um erro desconhecido.');
+        }
+    } finally {
+        setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadNews();
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
   }, [loadNews]);
 
   const renderContent = () => {
     if (isLoading) {
       return <LoadingSpinner text="Buscando as últimas notícias..." subtext="Aguarde, a IA está consultando a web para você." />;
     }
-    if (error && newsData.articles.length === 0) {
-      return <ErrorDisplay title="Falha ao buscar notícias" message={error} onRetry={() => loadNews(true)} />;
+    if (error) {
+      return <ErrorDisplay title="Falha ao buscar notícias" message={error} onRetry={loadNews} />;
+    }
+    if (newsData.articles.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center text-center p-8 mt-10 text-content-200">
+              <Inbox size={48} className="mb-4 text-brand-primary" />
+              <h3 className="text-lg font-semibold text-content-100">Nenhuma notícia encontrada</h3>
+              <p className="text-sm mt-1">Os dados podem estar cacheados. Tente novamente mais tarde.</p>
+            </div>
+        )
     }
     return (
       <>
-        {error && (
-            <div className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4 text-center text-sm">
-                Falha na última atualização. Exibindo dados anteriores. Erro: {error}
-            </div>
-        )}
         <div className="space-y-4">
           {newsData.articles.map((article, index) => (
             <NewsCard key={index} article={article} />
@@ -166,9 +93,6 @@ const NewsScreen: React.FC = () => {
     <div>
       <ScreenHeader title="Notícias" subtitle="Fique por dentro do mercado de FIIs" />
       <div className="p-4">
-        <div className="text-center text-sm text-content-200 mb-4 bg-base-200 p-2 rounded-md shadow">
-          <p>{statusMessage || 'Verificando atualizações...'}</p>
-        </div>
         {renderContent()}
       </div>
     </div>

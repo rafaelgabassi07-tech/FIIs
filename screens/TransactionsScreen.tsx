@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { Transaction } from '../types';
 import { Plus, Trash2, X, Inbox, ArrowDown, ArrowUp, Gift } from 'lucide-react';
@@ -183,7 +183,10 @@ const TransactionsScreen: React.FC = () => {
     }
   };
 
-  const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const sortedTransactions = useMemo(() => 
+    [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    [transactions]
+  );
 
   return (
     <>

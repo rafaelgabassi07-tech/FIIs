@@ -262,11 +262,22 @@ const PortfolioScreen: React.FC = () => {
       setSelectedFii(prev => (prev === ticker ? null : ticker));
   };
 
-  const totalValue = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.currentPrice), 0);
-  const totalInvested = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.averagePrice), 0);
-  const totalProfitLoss = totalValue - totalInvested;
-  const totalProfitLossPercent = totalInvested > 0 ? (totalProfitLoss / totalInvested) * 100 : 0;
-  const isTotalPositive = totalProfitLoss >= 0;
+  const portfolioSummary = useMemo(() => {
+    const totalValue = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.currentPrice), 0);
+    const totalInvested = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.averagePrice), 0);
+    
+    if (totalInvested === 0) {
+        return { totalValue, totalInvested, totalProfitLoss: 0, totalProfitLossPercent: 0, isTotalPositive: true };
+    }
+
+    const totalProfitLoss = totalValue - totalInvested;
+    const totalProfitLossPercent = (totalProfitLoss / totalInvested) * 100;
+    const isTotalPositive = totalProfitLoss >= 0;
+
+    return { totalValue, totalInvested, totalProfitLoss, totalProfitLossPercent, isTotalPositive };
+  }, [portfolio]);
+
+  const { totalValue, totalInvested, totalProfitLoss, totalProfitLossPercent, isTotalPositive } = portfolioSummary;
 
   const dividendsByPeriod = useMemo(() => {
     if (!dividends) return [];

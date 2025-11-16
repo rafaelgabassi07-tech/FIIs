@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { NewsArticle, GroundingSource } from '../types';
 import { fetchFIINews } from '../services/geminiService';
@@ -35,6 +34,34 @@ const ErrorDisplay: React.FC<{ message: string; onRetry: () => void }> = ({ mess
   </div>
 );
 
+const getNextCheckTime = (): Date => {
+  const nextCheck = new Date();
+  const currentHour = nextCheck.getHours();
+  const currentDay = nextCheck.getDay();
+
+  if (currentDay === 6) { // Saturday
+    nextCheck.setDate(nextCheck.getDate() + 2);
+    nextCheck.setHours(9, 0, 1, 0);
+    return nextCheck;
+  }
+  if (currentDay === 0) { // Sunday
+    nextCheck.setDate(nextCheck.getDate() + 1);
+    nextCheck.setHours(9, 0, 1, 0);
+    return nextCheck;
+  }
+  
+  if (currentHour < 9) {
+    nextCheck.setHours(9, 0, 1, 0);
+  } else if (currentHour < 14) {
+    nextCheck.setHours(14, 0, 1, 0);
+  } else {
+    const daysToAdd = currentDay === 5 ? 3 : 1;
+    nextCheck.setDate(nextCheck.getDate() + daysToAdd);
+    nextCheck.setHours(9, 0, 1, 0);
+  }
+  return nextCheck;
+};
+
 const NewsScreen: React.FC = () => {
   const [newsData, setNewsData] = useState<{ articles: NewsArticle[], sources: GroundingSource[] }>({ articles: [], sources: [] });
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -43,24 +70,30 @@ const NewsScreen: React.FC = () => {
   
   const timerRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    const runNewsCheck = async () => {
-      const hasData = !!localStorage.getItem('fiiNewsData');
-      if (!hasData) {
-        setIsLoading(true);
-      }
-      setError(null);
-      
-      if (hasData) {
+  const loadNews = useCallback(async (forceFetch = false) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    const hasData = !!localStorage.getItem('fiiNewsData');
+    if (forceFetch || !hasData) {
+      setIsLoading(true);
+    }
+    setError(null);
+    
+    if (hasData) {
+      try {
         setNewsData(JSON.parse(localStorage.getItem('fiiNewsData')!));
+      } catch {
+        localStorage.removeItem('fiiNewsData'); // Clear corrupted data
       }
+    }
 
-      const now = new Date();
-      const day = now.getDay();
-      const isWeekend = day === 0 || day === 6;
-      const lastFetchTimestamp = parseInt(localStorage.getItem('fiiNewsTimestamp') || '0', 10);
-      let shouldFetch = false;
+    const now = new Date();
+    const day = now.getDay();
+    const isWeekend = day === 0 || day === 6;
+    const lastFetchTimestamp = parseInt(localStorage.getItem('fiiNewsTimestamp') || '0', 10);
+    let shouldFetch = forceFetch;
 
+    if (!shouldFetch) {
       if (!isWeekend) {
         const today9AM = new Date(now).setHours(9, 0, 0, 0);
         const today2PM = new Date(now).setHours(14, 0, 0, 0);
@@ -68,75 +101,49 @@ const NewsScreen: React.FC = () => {
         else if (now.getTime() >= today9AM && now.getTime() < today2PM && lastFetchTimestamp < today9AM) shouldFetch = true;
       }
       if (!hasData && !isWeekend && now.getHours() >= 9) shouldFetch = true;
-      
-      if (shouldFetch) {
-        try {
-          const { articles, sources } = await fetchFIINews();
-          const dataToStore = { articles, sources };
-          setNewsData(dataToStore);
-          localStorage.setItem('fiiNewsData', JSON.stringify(dataToStore));
-          localStorage.setItem('fiiNewsTimestamp', String(now.getTime()));
-        } catch (err) {
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError('Ocorreu um erro desconhecido.');
-            }
-        }
+    }
+    
+    if (shouldFetch) {
+      try {
+        const { articles, sources } = await fetchFIINews();
+        const dataToStore = { articles, sources };
+        setNewsData(dataToStore);
+        localStorage.setItem('fiiNewsData', JSON.stringify(dataToStore));
+        localStorage.setItem('fiiNewsTimestamp', String(now.getTime()));
+      } catch (err) {
+          if (err instanceof Error) {
+              setError(err.message);
+          } else {
+              setError('Ocorreu um erro desconhecido.');
+          }
       }
+    }
 
-      setIsLoading(false);
+    setIsLoading(false);
 
-      const getNextCheckTime = (): Date => {
-        const nextCheck = new Date();
-        const currentHour = nextCheck.getHours();
-        const currentDay = nextCheck.getDay();
+    const nextCheckTime = getNextCheckTime();
+    setStatusMessage(`Próxima atualização: ${nextCheckTime.toLocaleString('pt-BR')}`);
+    
+    const delay = nextCheckTime.getTime() - new Date().getTime();
+    if (delay > 0) {
+      timerRef.current = window.setTimeout(() => loadNews(false), delay);
+    }
+  }, []);
 
-        if (currentDay === 6) { // Saturday
-          nextCheck.setDate(nextCheck.getDate() + 2);
-          nextCheck.setHours(9, 0, 1, 0);
-          return nextCheck;
-        }
-        if (currentDay === 0) { // Sunday
-          nextCheck.setDate(nextCheck.getDate() + 1);
-          nextCheck.setHours(9, 0, 1, 0);
-          return nextCheck;
-        }
-        
-        if (currentHour < 9) {
-          nextCheck.setHours(9, 0, 1, 0);
-        } else if (currentHour < 14) {
-          nextCheck.setHours(14, 0, 1, 0);
-        } else {
-          const daysToAdd = currentDay === 5 ? 3 : 1;
-          nextCheck.setDate(nextCheck.getDate() + daysToAdd);
-          nextCheck.setHours(9, 0, 1, 0);
-        }
-        return nextCheck;
-      };
-
-      const nextCheckTime = getNextCheckTime();
-      setStatusMessage(`Próxima atualização: ${nextCheckTime.toLocaleString('pt-BR')}`);
-      
-      const delay = nextCheckTime.getTime() - new Date().getTime();
-      if (delay > 0) {
-        timerRef.current = window.setTimeout(runNewsCheck, delay);
-      }
-    };
-
-    runNewsCheck();
+  useEffect(() => {
+    loadNews();
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, []);
+  }, [loadNews]);
 
   const renderContent = () => {
     if (isLoading) {
       return <LoadingSpinner />;
     }
     if (error && newsData.articles.length === 0) {
-      return <ErrorDisplay message={error} onRetry={() => window.location.reload()} />;
+      return <ErrorDisplay message={error} onRetry={() => loadNews(true)} />;
     }
     return (
       <>

@@ -1,11 +1,23 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { NewsArticle, GroundingSource, HistoricalDataPoint } from '../types';
+import { API_KEY_STORAGE_KEY } from '../constants';
 
-// FIX: Corrected API key access to use `process.env.API_KEY` as required by the guidelines,
-// resolving the TypeScript error and aligning with the expected environment configuration.
+const getApiKey = (): string | null => {
+    try {
+        return localStorage.getItem(API_KEY_STORAGE_KEY);
+    } catch {
+        // LocalStorage might be disabled or unavailable
+        return null;
+    }
+};
+
 const getAi = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  if (!apiKey) {
+      throw new Error("Chave de API do Google AI não configurada. Por favor, adicione sua chave na aba 'Menu'.");
+  }
+  return new GoogleGenAI({ apiKey });
 }
 
 export interface FIIMarketData {
@@ -53,7 +65,6 @@ export const fetchFIIsFullData = async (
         
         let jsonString = response.text;
         
-        // Robustly extract JSON from the response text.
         const jsonMatch = jsonString.match(/```json\n([\s\S]*?)\n```/);
         if (jsonMatch && jsonMatch[1]) {
             jsonString = jsonMatch[1];
@@ -100,8 +111,8 @@ export const fetchFIIsFullData = async (
 
   } catch (error) {
     console.error("Error fetching FII data:", error);
-    if (error instanceof Error && (error.message.includes("API_KEY") || error.message.includes("API key"))) {
-        throw new Error("Falha na autenticação com a API. Verifique se sua chave de API (API_KEY) está configurada corretamente, é válida e possui as permissões necessárias.");
+    if (error instanceof Error && error.message.includes("não configurada")) {
+        throw error;
     }
     throw new Error("Não foi possível buscar os dados dos FIIs. A IA pode estar sobrecarregada ou ocorreu um erro de rede. Tente novamente mais tarde.");
   }
@@ -123,7 +134,6 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
 
     let jsonString = response.text;
     
-    // Robustly extract JSON from the response text.
     const jsonMatch = jsonString.match(/```json\n([\s\S]*?)\n```/);
     if (jsonMatch && jsonMatch[1]) {
         jsonString = jsonMatch[1];
@@ -161,8 +171,8 @@ export const fetchFIINews = async (): Promise<{ articles: NewsArticle[], sources
 
   } catch (error) {
     console.error("Error fetching FII news:", error);
-    if (error instanceof Error && (error.message.includes("API_KEY") || error.message.includes("API key"))) {
-        throw new Error("Falha na autenticação com a API. Verifique se sua chave de API (API_KEY) está configurada corretamente, é válida e possui as permissões necessárias.");
+     if (error instanceof Error && error.message.includes("não configurada")) {
+        throw error;
     }
     throw new Error("Não foi possível buscar as notícias. A IA pode estar ocupada, tente novamente.");
   }

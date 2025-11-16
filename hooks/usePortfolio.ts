@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Transaction, FII } from '../types';
+import { useMemo, useEffect, useState, useCallback } from 'react';
+import { Transaction, FII, HistoricalDataPoint } from '../types';
 import { FIIMarketData } from '../services/geminiService';
 import { TRANSACTIONS_STORAGE_KEY } from '../constants';
 
@@ -7,6 +7,13 @@ interface Holding {
   ticker: string;
   quantity: number;
   averagePrice: number;
+}
+
+interface PortfolioMetrics {
+    holdings: Holding[];
+    dividends: Transaction[];
+    realizedGains: number;
+    investedHistory: HistoricalDataPoint[];
 }
 
 export const usePortfolio = () => {
@@ -37,43 +44,61 @@ export const usePortfolio = () => {
         };
     }, []);
 
-    const holdings = useMemo((): Holding[] => {
-        const portfolio: { [key: string]: { quantity: number; totalCost: number } } = {};
+    const { holdings, dividends, realizedGains, investedHistory } = useMemo((): PortfolioMetrics => {
+        const holdingsCalc: { [key: string]: { quantity: number; totalCost: number } } = {};
+        const investedHistoryMap = new Map<string, number>();
+        let cumulativeInvestedCapital = 0;
+        let totalRealizedGains = 0;
 
-        const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const sortedTxs = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-        for (const tx of sortedTransactions) {
-            if (tx.type === 'Dividendo') continue;
-
-            if (!portfolio[tx.ticker]) {
-                portfolio[tx.ticker] = { quantity: 0, totalCost: 0 };
-            }
+        sortedTxs.forEach(tx => {
             if (tx.type === 'Compra') {
-                portfolio[tx.ticker].quantity += tx.quantity;
-                portfolio[tx.ticker].totalCost += tx.quantity * tx.price;
-            } else { // Venda
-                const currentPosition = portfolio[tx.ticker];
-                if (currentPosition.quantity > 0) {
-                    const averagePrice = currentPosition.totalCost / currentPosition.quantity;
-                    currentPosition.totalCost -= tx.quantity * averagePrice;
-                }
-                currentPosition.quantity -= tx.quantity;
-            }
-        }
+                if (!holdingsCalc[tx.ticker]) holdingsCalc[tx.ticker] = { quantity: 0, totalCost: 0 };
+                const cost = tx.quantity * tx.price;
+                holdingsCalc[tx.ticker].quantity += tx.quantity;
+                holdingsCalc[tx.ticker].totalCost += cost;
+                cumulativeInvestedCapital += cost;
+            } else if (tx.type === 'Venda') {
+                const position = holdingsCalc[tx.ticker];
+                if (position && position.quantity > 0) {
+                    const averagePrice = position.totalCost / position.quantity;
+                    const costOfSoldAssets = tx.quantity * averagePrice;
+                    
+                    totalRealizedGains += (tx.quantity * tx.price) - costOfSoldAssets;
+                    
+                    position.totalCost -= costOfSoldAssets;
+                    position.quantity -= tx.quantity;
 
-        return Object.entries(portfolio)
+                    cumulativeInvestedCapital -= costOfSoldAssets;
+                }
+            }
+            investedHistoryMap.set(tx.date, cumulativeInvestedCapital);
+        });
+
+        const finalHoldings = Object.entries(holdingsCalc)
             .filter(([, data]) => data.quantity > 0.0001) 
             .map(([ticker, data]) => ({
                 ticker,
                 quantity: data.quantity,
                 averagePrice: data.quantity > 0 ? data.totalCost / data.quantity : 0,
             }));
-    }, [transactions]);
 
-    const dividends = useMemo((): Transaction[] => {
-        return transactions.filter(tx => tx.type === 'Dividendo');
-    }, [transactions]);
+        const finalDividends = transactions.filter(tx => tx.type === 'Dividendo');
+        
+        const finalInvestedHistory = Array.from(investedHistoryMap.entries())
+            .map(([date, value]) => ({ date, value }))
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+
+        return { 
+            holdings: finalHoldings, 
+            dividends: finalDividends, 
+            realizedGains: totalRealizedGains, 
+            investedHistory: finalInvestedHistory 
+        };
+    }, [transactions]);
+    
     const combineHoldingsWithMarketData = useCallback((marketData: FIIMarketData[]): FII[] => {
         const marketDataMap = new Map(marketData.map(d => [d.ticker, d]));
         return holdings.map(holding => {
@@ -86,5 +111,5 @@ export const usePortfolio = () => {
         }).filter(fii => fii.currentPrice > 0);
     }, [holdings]);
 
-    return { holdings, transactions, dividends, combineHoldingsWithMarketData };
+    return { holdings, transactions, dividends, realizedGains, investedHistory, combineHoldingsWithMarketData };
 };

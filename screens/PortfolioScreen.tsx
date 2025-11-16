@@ -1,11 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { FII, HistoricalDataPoint } from '../types';
 import { fetchFIIsFullData, FIIMarketData } from '../services/geminiService';
-import { TrendingUp, TrendingDown, DollarSign, ChevronDown, Archive, Gift } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Landmark, HandCoins, BarChart, ChevronDown, Archive, Gift, PieChart } from 'lucide-react';
 import { usePortfolio } from '../hooks/usePortfolio';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorDisplay from '../components/ErrorDisplay';
+import InteractiveChart from '../components/InteractiveChart';
+import AllocationPieChart from '../components/AllocationPieChart';
+import StatCard from '../components/StatCard';
 
 const chartPeriods = {
     '1M': { days: 30, label: '1 Mês' },
@@ -14,95 +18,6 @@ const chartPeriods = {
     '1A': { days: 365, label: '1 Ano' },
 };
 type ChartPeriodKey = keyof typeof chartPeriods;
-
-const InteractiveChart: React.FC<{ data: HistoricalDataPoint[]; color: string; height?: number; }> = ({ data, color, height = 200 }) => {
-    const svgRef = useRef<SVGSVGElement>(null);
-    const [tooltip, setTooltip] = useState<{ x: number; y: number; data: HistoricalDataPoint } | null>(null);
-
-    const { path, areaPath, width, points } = useMemo(() => {
-        if (!data || data.length < 2) return { path: '', areaPath: '', width: 0, points: [] };
-        const w = 500;
-        const h = height;
-        const padding = 5;
-
-        const values = data.map(d => d.value);
-        const dates = data.map(d => new Date(d.date).getTime());
-
-        const minVal = Math.min(...values);
-        const maxVal = Math.max(...values);
-        const minDate = Math.min(...dates);
-        const maxDate = Math.max(...dates);
-        
-        const valueRange = maxVal - minVal;
-        const dateRange = maxDate - minDate;
-
-        const getX = (date: number) => (dateRange > 0 ? ((date - minDate) / dateRange) * (w - padding * 2) + padding : w / 2);
-        const getY = (value: number) => (h - padding) - (valueRange > 0 ? ((value - minVal) / valueRange) * (h - padding * 2) : h / 2);
-        
-        const mappedPoints = data.map(d => ({ x: getX(new Date(d.date).getTime()), y: getY(d.value) }));
-        
-        let pathStr = `M ${mappedPoints[0].x} ${mappedPoints[0].y}`;
-        mappedPoints.slice(1).forEach(p => { pathStr += ` L ${p.x} ${p.y}`; });
-        
-        let areaPathStr = pathStr + ` L ${mappedPoints[mappedPoints.length - 1].x} ${h} L ${mappedPoints[0].x} ${h} Z`;
-
-        return { path: pathStr, areaPath: areaPathStr, width: w, points: mappedPoints };
-    }, [data, height]);
-
-    const handleMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
-        if (!svgRef.current || points.length === 0) return;
-        const svg = svgRef.current;
-        const rect = svg.getBoundingClientRect();
-        const mouseX = ((event.clientX - rect.left) / rect.width) * width;
-
-        const closestPointIndex = points.reduce((closest, point, index) => {
-            const dist = Math.abs(point.x - mouseX);
-            const closestDist = Math.abs(points[closest].x - mouseX);
-            return dist < closestDist ? index : closest;
-        }, 0);
-
-        const pointData = data[closestPointIndex];
-        setTooltip({ x: points[closestPointIndex].x, y: points[closestPointIndex].y, data: pointData });
-    };
-
-    if (!data || data.length < 2) {
-        return <div style={{height: `${height}px`}} className="flex items-center justify-center text-content-200 bg-base-300/50 rounded-lg"><p>Dados insuficientes para exibir o gráfico.</p></div>;
-    }
-    
-    return (
-        <div className="relative">
-            <svg
-                ref={svgRef}
-                viewBox={`0 0 ${width} ${height}`}
-                onMouseMove={handleMouseMove}
-                onMouseLeave={() => setTooltip(null)}
-                className="w-full h-auto"
-            >
-                <defs>
-                    <linearGradient id={`gradient-${color}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={color} stopOpacity={0.3} />
-                        <stop offset="100%" stopColor={color} stopOpacity={0} />
-                    </linearGradient>
-                </defs>
-                <path d={areaPath} fill={`url(#gradient-${color})`} />
-                <path d={path} fill="none" stroke={color} strokeWidth="2" />
-                {tooltip && (
-                    <circle cx={tooltip.x} cy={tooltip.y} r="4" fill={color} stroke="white" strokeWidth="2" />
-                )}
-            </svg>
-            {tooltip && (
-                <div className="absolute bg-base-100 text-content-100 p-2 rounded-md shadow-lg text-xs pointer-events-none" style={{
-                    left: `${(tooltip.x / width) * 100}%`,
-                    top: `${(tooltip.y / height) * 100}%`,
-                    transform: `translate(-50%, -120%)`,
-                }}>
-                    <div>{new Date(tooltip.data.date).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</div>
-                    <div className="font-bold">{tooltip.data.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-                </div>
-            )}
-        </div>
-    );
-};
 
 const PortfolioCard: React.FC<{ 
     fii: FII, 
@@ -157,7 +72,7 @@ const PortfolioCard: React.FC<{
 };
 
 const PortfolioScreen: React.FC = () => {
-  const { holdings, dividends, combineHoldingsWithMarketData } = usePortfolio();
+  const { holdings, dividends, realizedGains, investedHistory, combineHoldingsWithMarketData } = usePortfolio();
   const [portfolio, setPortfolio] = useState<FII[]>([]);
   const [portfolioHistory, setPortfolioHistory] = useState<HistoricalDataPoint[]>([]);
   const [individualHistories, setIndividualHistories] = useState<Record<string, HistoricalDataPoint[]>>({});
@@ -238,23 +153,58 @@ const PortfolioScreen: React.FC = () => {
   const handleFiiSelect = (ticker: string) => {
       setSelectedFii(prev => (prev === ticker ? null : ticker));
   };
+  
+  const alignedInvestedHistory = useMemo(() => {
+    if (portfolioHistory.length === 0 || investedHistory.length === 0) return [];
+
+    // Fix: Explicitly type the Map to ensure correct type inference for keys and values.
+    // This resolves issues where sortedInvestedTimestamps elements were inferred as 'unknown'.
+    const investedMap = new Map<number, number>(investedHistory.map(p => [new Date(p.date).getTime(), p.value]));
+    const sortedInvestedTimestamps = Array.from(investedMap.keys()).sort((a,b) => a - b);
+
+    let lastInvestedValue = 0;
+    const firstPortfolioTimestamp = new Date(portfolioHistory[0].date).getTime();
+    
+    // Find the invested value right before the chart's period starts
+    const initialInvestedTimestamps = sortedInvestedTimestamps.filter(t => t < firstPortfolioTimestamp);
+     if (initialInvestedTimestamps.length > 0) {
+        lastInvestedValue = investedMap.get(initialInvestedTimestamps[initialInvestedTimestamps.length - 1])!;
+    }
+
+    return portfolioHistory.map(p => {
+        const currentTimestamp = new Date(p.date).getTime();
+        const relevantTimestamps = sortedInvestedTimestamps.filter(t => t > (currentTimestamp - 86400000) && t <= currentTimestamp);
+        
+        if (relevantTimestamps.length > 0) {
+            lastInvestedValue = investedMap.get(relevantTimestamps[relevantTimestamps.length - 1])!;
+        }
+        return { date: p.date, value: lastInvestedValue };
+    });
+  }, [portfolioHistory, investedHistory]);
 
   const portfolioSummary = useMemo(() => {
     const totalValue = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.currentPrice), 0);
-    const totalInvested = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.averagePrice), 0);
+    const totalCost = portfolio.reduce((acc, fii) => acc + (fii.quantity * fii.averagePrice), 0);
+    const totalDividendsReceived = dividends.reduce((acc, tx) => acc + tx.price, 0);
+
+    const totalReceived = totalDividendsReceived + realizedGains;
     
-    if (totalInvested === 0) {
-        return { totalValue, totalInvested, totalProfitLoss: 0, totalProfitLossPercent: 0, isTotalPositive: true };
-    }
+    // Total Return = (Current Value - Total Cost Basis) + Total Received (Dividends + Realized Gains)
+    const totalReturn = (totalValue - totalCost) + totalReceived;
+    const totalReturnPercent = totalCost > 0 ? (totalReturn / totalCost) * 100 : 0;
+    const isTotalPositive = totalReturn >= 0;
 
-    const totalProfitLoss = totalValue - totalInvested;
-    const totalProfitLossPercent = (totalProfitLoss / totalInvested) * 100;
-    const isTotalPositive = totalProfitLoss >= 0;
+    return { totalValue, totalCost, totalReceived, totalReturn, totalReturnPercent, isTotalPositive };
+  }, [portfolio, dividends, realizedGains]);
 
-    return { totalValue, totalInvested, totalProfitLoss, totalProfitLossPercent, isTotalPositive };
+  const { totalValue, totalCost, totalReceived, totalReturn, totalReturnPercent, isTotalPositive } = portfolioSummary;
+  
+  const allocationData = useMemo(() => {
+    return portfolio.map(fii => ({
+      ticker: fii.ticker,
+      value: fii.quantity * fii.currentPrice,
+    }));
   }, [portfolio]);
-
-  const { totalValue, totalInvested, totalProfitLoss, totalProfitLossPercent, isTotalPositive } = portfolioSummary;
 
   const dividendsByPeriod = useMemo(() => {
     if (!dividends) return [];
@@ -266,11 +216,11 @@ const PortfolioScreen: React.FC = () => {
     return dividends.filter(tx => new Date(tx.date) >= cutoffDate);
   }, [dividends, chartPeriod]);
 
-  const totalDividends = useMemo(() => {
+  const totalDividendsInPeriod = useMemo(() => {
       return dividendsByPeriod.reduce((acc, tx) => acc + tx.price, 0);
   }, [dividendsByPeriod]);
 
-  const dividendsByFii = useMemo(() => {
+  const dividendsByFiiInPeriod = useMemo(() => {
       const byFii: Record<string, number> = {};
       for (const tx of dividendsByPeriod) {
           byFii[tx.ticker] = (byFii[tx.ticker] || 0) + tx.price;
@@ -298,68 +248,82 @@ const PortfolioScreen: React.FC = () => {
     }
     return (
       <div className="flex flex-col gap-8">
-        <div className="bg-brand-primary text-white p-6 rounded-xl shadow-lg w-full">
-            <div className="flex items-center">
-              <DollarSign size={28}/>
-              <h2 className="text-xl font-semibold ml-2">Patrimônio Total</h2>
-            </div>
-          <p className="text-4xl font-bold mt-2">{totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-          
-          {totalInvested > 0 && (
-            <div className="mt-4 pt-4 border-t border-white/20">
-                <h3 className="text-sm font-semibold text-emerald-100">Lucro/Prejuízo não Realizado</h3>
-                <div className="flex items-center mt-1">
-                    {isTotalPositive ? <TrendingUp size={22} className="mr-2" /> : <TrendingDown size={22} className="mr-2" />}
-                    <span className="text-2xl font-bold">
-                        {totalProfitLoss.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </span>
-                    <span className="ml-3 text-lg font-semibold">
-                        ({isTotalPositive ? '+' : ''}{totalProfitLossPercent.toFixed(2)}%)
-                    </span>
-                </div>
-            </div>
-          )}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard 
+            icon={Wallet} 
+            label="Patrimônio Atual" 
+            value={totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
+          />
+          <StatCard 
+            icon={Landmark} 
+            label="Custo Total" 
+            value={totalCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
+          />
+           <StatCard 
+            icon={HandCoins} 
+            label="Total Recebido" 
+            value={totalReceived.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
+            subValue="Divs + Vendas"
+            iconColorClass="text-yellow-400"
+          />
+          <StatCard 
+            icon={BarChart} 
+            label="Rentabilidade Total" 
+            value={totalReturn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
+            subValue={`${isTotalPositive ? '+' : ''}${totalReturnPercent.toFixed(2)}%`}
+            iconColorClass={isTotalPositive ? 'text-green-400' : 'text-red-400'}
+          />
         </div>
         
-        <div className="bg-base-200 p-4 rounded-xl shadow-lg">
-            <h3 className="text-xl font-semibold text-content-100 mb-4">Desempenho da Carteira</h3>
-             <div className="flex justify-center space-x-1 sm:space-x-2 bg-base-300 p-1 rounded-lg mb-4">
-                {(Object.keys(chartPeriods) as ChartPeriodKey[]).map(key => (
-                    <button key={key} onClick={() => setChartPeriod(key)} className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors w-full ${chartPeriod === key ? 'bg-brand-primary text-white shadow' : 'text-content-200 hover:bg-base-100'}`}>
-                        {chartPeriods[key].label}
-                    </button>
-                ))}
-            </div>
-            {isChartLoading ? <LoadingSpinner text="Calculando desempenho..."/> : <InteractiveChart data={portfolioHistory} color="#10B981" />}
-        </div>
-        
-        <div>
-          <h3 className="text-xl font-semibold text-content-100 mb-4">Meus Dividendos</h3>
-          <div className="bg-base-200 p-4 rounded-xl shadow-lg mb-4">
-              <div className="flex items-center text-content-200">
-                <Gift size={20} className="mr-2 text-yellow-400"/>
-                <p className="text-md">Total Recebido ({chartPeriods[chartPeriod].label})</p>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          <div className="lg:col-span-3 bg-base-200 p-4 rounded-xl shadow-lg">
+              <h3 className="text-xl font-semibold text-content-100 mb-4">Evolução do Patrimônio</h3>
+               <div className="flex justify-center space-x-1 sm:space-x-2 bg-base-300 p-1 rounded-lg mb-4">
+                  {(Object.keys(chartPeriods) as ChartPeriodKey[]).map(key => (
+                      <button key={key} onClick={() => setChartPeriod(key)} className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors w-full ${chartPeriod === key ? 'bg-brand-primary text-white shadow' : 'text-content-200 hover:bg-base-100'}`}>
+                          {chartPeriods[key].label}
+                      </button>
+                  ))}
               </div>
-              <p className="text-3xl font-bold text-yellow-400 mt-1">
-                  {totalDividends.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </p>
+              {isChartLoading ? <LoadingSpinner text="Calculando desempenho..."/> : <InteractiveChart data={portfolioHistory} investedData={alignedInvestedHistory} color="#10B981" />}
           </div>
+           <div className="lg:col-span-2 bg-base-200 p-4 rounded-xl shadow-lg">
+                <div className="flex items-center gap-2 mb-4">
+                    <PieChart size={24} className="text-content-100" />
+                    <h3 className="text-xl font-semibold text-content-100">Alocação de Ativos</h3>
+                </div>
+                {isChartLoading ? <LoadingSpinner text="Calculando alocação..."/> : <AllocationPieChart data={allocationData} />}
+            </div>
+        </div>
 
-          <div className="space-y-2">
-              {dividendsByFii.length > 0 ? (
-                  dividendsByFii.map(([ticker, amount]) => (
-                      <div key={ticker} className="bg-base-200 p-3 rounded-lg flex justify-between items-center shadow-sm">
-                          <span className="font-bold text-content-100">{ticker}</span>
-                          <span className="font-semibold text-green-400">
-                              + {amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </span>
-                      </div>
-                  ))
-              ) : (
-                  <div className="text-center p-4 bg-base-200 rounded-lg shadow-sm">
-                      <p className="text-content-200">Nenhum dividendo registrado neste período.</p>
-                  </div>
-              )}
+        <div>
+          <h3 className="text-xl font-semibold text-content-100 mb-4">Meus Dividendos ({chartPeriods[chartPeriod].label})</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-base-200 p-4 rounded-xl shadow-lg">
+                <div className="flex items-center text-content-200">
+                  <Gift size={20} className="mr-2 text-yellow-400"/>
+                  <p className="text-md">Total Recebido no Período</p>
+                </div>
+                <p className="text-3xl font-bold text-yellow-400 mt-1">
+                    {totalDividendsInPeriod.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+            </div>
+            <div className="space-y-2">
+                {dividendsByFiiInPeriod.length > 0 ? (
+                    dividendsByFiiInPeriod.slice(0,3).map(([ticker, amount]) => (
+                        <div key={ticker} className="bg-base-200 p-3 rounded-lg flex justify-between items-center shadow-sm h-full">
+                            <span className="font-bold text-content-100">{ticker}</span>
+                            <span className="font-semibold text-green-400">
+                                + {amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </span>
+                        </div>
+                    ))
+                ) : (
+                    <div className="text-center p-4 bg-base-200 rounded-lg shadow-sm h-full flex items-center justify-center">
+                        <p className="text-content-200">Nenhum dividendo registrado neste período.</p>
+                    </div>
+                )}
+            </div>
           </div>
         </div>
 

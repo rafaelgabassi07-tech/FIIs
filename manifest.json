@@ -1,0 +1,16 @@
+{
+  "short_name": "Invest App",
+  "name": "Meu Invest App",
+  "description": "Acompanhe seus investimentos em FIIs com facilidade.",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA2NCA2NCcgZmlsbD0nIzExMTgyNyI+PHBhdGggZD0nTTMyIDQgTDQgNjAgSDYwIEwzMiA0IFonIGZpbGw9JyMwNTk2NjknLz48cGF0aCBkPSdNMjYgNDggViAzOCBIIDM4IFYgNDgnIHN0cm9rZT0nd2hpdGUnIHN0cm9rZS13aWR0aD0nMicgZmlsbD0nbm9uZScvPjxwYXRoIGQ9J00yOSA0OCBWIDM4JyBzdHJva2U9J3doaXRlJyBzdHJva2Utd2lkdGg9JzInLz48cGF0aCBkPSdNMzUgNDggViAzOCcgc3Ryb2tlPSd3aGl0ZScgc3Ryb2tlLXdpZHRoPScyJy8+PHBhdGggZD0nTTI0IDM2IEwgNDAgMzYnIHN0cm9rZT0nd2hpdGUnIHN0cm9rZS13aWR0aD0nMicvPjxwYXRoIGQ9J00yNSAzNiBMIDM5IDM2IEwgMzIgMzAgWicgZmlsbD0nd2hpdGUnIHN0cm9rZT0nbm9uZScvPjwvc3ZnPg==",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#1F2937",
+  "background_color": "#1F2937"
+}

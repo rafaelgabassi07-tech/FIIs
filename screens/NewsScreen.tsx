@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { NewsArticle, GroundingSource } from '../types';
@@ -30,12 +29,11 @@ const NewsScreen: React.FC = () => {
       const data = await fetchFIINews();
       setNewsData(data);
     } catch (err) {
-        if (err instanceof ApiKeyMissingError) {
+        const error = err as Error;
+        if (error.name === 'ApiKeyMissingError') {
           setIsApiKeyMissing(true);
-        } else if (err instanceof Error) {
-            setError(err.message);
         } else {
-            setError('Ocorreu um erro desconhecido.');
+            setError(error.message || 'Ocorreu um erro desconhecido.');
         }
     } finally {
         setIsLoading(false);

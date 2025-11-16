@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import ScreenHeader from '../components/ScreenHeader';
 import { User, Bell, Shield, LogOut, ChevronRight, KeyRound, CheckCircle, AlertCircle, Download, Upload, CloudDownload, Info } from 'lucide-react';
@@ -8,14 +7,14 @@ import { TRANSACTIONS_STORAGE_KEY } from '../constants';
 import { useUpdateCheck } from '../hooks/useUpdateCheck';
 import UpdateModal from '../components/UpdateModal';
 
-const MenuItem: React.FC<{ icon: React.ElementType; text: string; onClick?: () => void; status?: React.ReactNode }> = ({ icon: Icon, text, onClick, status }) => (
-  <button onClick={onClick} className="w-full flex items-center justify-between p-4 bg-base-200 rounded-lg hover:bg-base-300 transition-colors duration-200">
+const MenuItem: React.FC<{ icon: React.ElementType; text: string; onClick?: () => void; status?: React.ReactNode; disabled?: boolean; }> = ({ icon: Icon, text, onClick, status, disabled = false }) => (
+  <button onClick={onClick} disabled={disabled} className={`w-full flex items-center justify-between p-4 bg-base-200 rounded-lg transition-colors duration-200 ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-base-300'}`}>
     <div className="flex items-center">
       <Icon className="w-6 h-6 text-brand-primary mr-4" />
       <span className="text-lg text-content-100">{text}</span>
     </div>
     <div className="flex items-center gap-2">
-      {status}
+      {disabled ? <span className="text-xs text-content-200">Em breve</span> : status}
       <ChevronRight className="w-5 h-5 text-content-200" />
     </div>
   </button>
@@ -143,8 +142,8 @@ const MenuScreen: React.FC = () => {
                 <ScreenHeader title="Menu" subtitle="Configurações e opções" />
                 <div className="p-2">
                     <MenuSection title="Conta">
-                        <MenuItem icon={User} text="Meu Perfil" />
-                        <MenuItem icon={Shield} text="Segurança" />
+                        <MenuItem icon={User} text="Meu Perfil" disabled />
+                        <MenuItem icon={Shield} text="Segurança" disabled />
                     </MenuSection>
 
                     <MenuSection title="Configurações">
@@ -168,7 +167,7 @@ const MenuScreen: React.FC = () => {
                     </MenuSection>
                     
                     <MenuSection title="Geral">
-                        <MenuItem icon={LogOut} text="Sair" />
+                        <MenuItem icon={LogOut} text="Sair" disabled />
                     </MenuSection>
                 </div>
             </div>

@@ -1,5 +1,5 @@
 {
-  "name": "Meu FII App",
-  "description": "Um aplicativo básico para acompanhar seus Fundos de Investimento Imobiliário (FIIs), visualizar transações e se manter atualizado com as últimas notícias do mercado geradas por IA.",
+  "name": "Meu Invest App",
+  "description": "Um aplicativo PWA para acompanhar seus investimentos, visualizar transações e se manter atualizado com as últimas notícias do mercado geradas por IA.",
   "requestFramePermissions": []
 }
